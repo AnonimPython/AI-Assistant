@@ -1,0 +1,323 @@
+<!--
+  Main chat interface — model selector, voice selector, message area
+  Основной интерфейс чата — выбор модели, выбор голоса, область сообщений
+-->
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <!--? Document head / Заголовок документа — мета-теги, заголовок, иконка, стили -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t.app_title }}</title>
+    <link rel="icon" type="image/png" href="/static/app_img/icon.png">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+</head>
+<body class="theme-{{ theme }}">
+    <!--! Sidebar / Боковая панель — навигация, управление моделью, голосом и настройками -->
+    <div class="app-container">
+        <aside class="sidebar">
+            <!--* Sidebar header / Заголовок боковой панели -->
+            <div class="sidebar-header">
+                <h2>AI Assistant</h2>
+            </div>
+
+            <!--* Model selector section / Выбор модели -->
+            <div class="sidebar-section">
+                <label class="select-label">{{ t.model_label }}</label>
+                <select id="model-select" class="styled-select">
+                    {% for m in models %}
+                    <option value="{{ m.id }}" data-provider="{{ m.provider }}">
+                        {{ m.name }} ({{ m.provider }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <!--! Voice section / Выбор голоса и управление звуком -->
+            <div class="sidebar-section">
+                <label class="select-label">{{ t.voice_label }}</label>
+                <div class="voice-row">
+                    <select id="voice-select" class="styled-select">
+                        <option value="">{{ t.no_voice }}</option>
+                        {% for v_name, v_id in voices %}
+                        <option value="{{ v_id }}">{{ v_name }}</option>
+                        {% endfor %}
+                    </select>
+                    <!--? Mute toggle / Вкл/выкл звука — переключает иконку динамика -->
+                    <button id="mute-toggle" class="mute-btn" title="{{ t.mute_tooltip }}">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="mute-icon-on">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        </svg>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="mute-icon-off" style="display:none">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                            <line x1="23" y1="9" x2="17" y2="15"/>
+                            <line x1="17" y1="9" x2="23" y2="15"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!--* Add voice section / Добавление пользовательского голоса -->
+            <div class="sidebar-section voice-manage-section">
+                <button id="toggle-add-voice" class="sidebar-btn">{{ t.add_voice }}</button>
+                <div id="add-voice-form" class="add-voice-form" style="display:none">
+                    <input type="text" id="voice-name-input" class="sidebar-input"
+                           placeholder="{{ t.voice_name_ph }}">
+                    <div class="voice-url-row">
+                        <input type="text" id="voice-url-input" class="sidebar-input"
+                               placeholder="{{ t.voice_url_ph }}">
+                    </div>
+                    <a href="https://fish.audio/app/discovery/" target="_blank" class="browse-voices-link">{{ t.browse_voices }}</a>
+                    <button id="add-voice-btn" class="sidebar-btn add-voice-submit">
+                        {{ t.add_voice }}
+                    </button>
+                    <div id="voice-msg" class="voice-msg"></div>
+                    <button id="how-to-add-voice-btn" class="sidebar-btn how-to-add-voice-btn">{{ t.how_to_add_voice }}</button>
+                </div>
+                <div id="custom-voices-list" class="custom-voices-list"></div>
+            </div>
+            <!--! Action buttons section / Кнопки действий: очистка, настройки, сброс -->
+            <div class="sidebar-section">
+                <button id="clear-chat-btn" class="sidebar-btn">{{ t.clear_chat }}</button>
+                <button id="clear-history-btn" class="sidebar-btn danger">{{ t.clear_history }}</button>
+                <button id="settings-btn" class="sidebar-btn settings-btn">{{ t.settings }}</button>
+                <button id="reset-btn" class="sidebar-btn danger">{{ t.reset_settings }}</button>
+            </div>
+            <!--? Sidebar footer / Подвал боковой панели — версия и ссылка на GitHub -->
+            <div class="sidebar-footer">
+                    <span class="version">v1.0</span>
+                    <a href="https://github.com/AnonimPython" target="_blank" class="github-link">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                        AnonimPython
+                    </a>
+            </div>
+        </aside>
+
+        <!--! Main chat area / Основная область чата — сообщения, индикаторы, ввод -->
+        <main class="main-area">
+            <!--* Chat header / Заголовок чата: статус, индикатор голоса -->
+            <div class="chat-header">
+                <span id="status-indicator" class="status-dot"></span>
+                <span id="status-text">{{ t.status_ready }}</span>
+            </div>
+            <!--? Messages container / Контейнер сообщений — сюда рендерятся все сообщения чата -->
+            <div id="chat-messages" class="chat-messages"></div>
+
+            <!--* Input area / Область ввода: текстовое поле, микрофон, кнопка отправки -->
+            <div class="input-area">
+                <textarea id="message-input" class="message-input"
+                          placeholder="{{ t.input_placeholder }}" rows="1"
+                          oninput="autoResize(this)"></textarea>
+                <button id="send-btn" class="send-btn" disabled>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="19" x2="12" y2="5"></line>
+                        <polyline points="5 12 12 5 19 12"></polyline>
+                    </svg>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!--? Hidden audio player / Скрытый аудиоплеер — для воспроизведения голосовых ответов -->
+    <div id="audio-player" style="display:none"></div>
+
+    <!--! Settings modal / Модальное окно настроек — тема, лимит истории, API-ключи, тест моделей -->
+    <div id="settings-modal" class="settings-overlay" style="display:none">
+        <div class="settings-panel">
+            <div class="settings-header">
+                <h3>{{ t.settings }}</h3>
+                <button id="settings-close" class="settings-close">&times;</button>
+            </div>
+            <div class="settings-body">
+                <!--* Theme presets / Пресеты темы оформления — выбор и применение цветовой схемы -->
+                <div class="settings-section">
+                    <h4>{{ t.theme }}</h4>
+                    <div id="theme-presets" class="theme-presets">
+                        <div class="theme-card" data-theme="dark-purple">
+                            <div class="theme-circle" style="background:#0a0a14;border-color:#6c63ff">
+                                <span class="theme-dot" style="background:#6c63ff"></span>
+                            </div>
+                            <span class="theme-card-name">Purple</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-red">
+                            <div class="theme-circle" style="background:#140a0a;border-color:#ff4757">
+                                <span class="theme-dot" style="background:#ff4757"></span>
+                            </div>
+                            <span class="theme-card-name">Red</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-green">
+                            <div class="theme-circle" style="background:#0a140a;border-color:#00c853">
+                                <span class="theme-dot" style="background:#00c853"></span>
+                            </div>
+                            <span class="theme-card-name">Green</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-blue">
+                            <div class="theme-circle" style="background:#0a0a18;border-color:#4488ff">
+                                <span class="theme-dot" style="background:#4488ff"></span>
+                            </div>
+                            <span class="theme-card-name">Blue</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-orange">
+                            <div class="theme-circle" style="background:#14100a;border-color:#ff8c42">
+                                <span class="theme-dot" style="background:#ff8c42"></span>
+                            </div>
+                            <span class="theme-card-name">Orange</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-pink">
+                            <div class="theme-circle" style="background:#140a12;border-color:#e040a0">
+                                <span class="theme-dot" style="background:#e040a0"></span>
+                            </div>
+                            <span class="theme-card-name">Pink</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-cyan">
+                            <div class="theme-circle" style="background:#0a1414;border-color:#00c8c8">
+                                <span class="theme-dot" style="background:#00c8c8"></span>
+                            </div>
+                            <span class="theme-card-name">Cyan</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-amber">
+                            <div class="theme-circle" style="background:#100c08;border-color:#f0a030">
+                                <span class="theme-dot" style="background:#f0a030"></span>
+                            </div>
+                            <span class="theme-card-name">Amber</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-slate">
+                            <div class="theme-circle" style="background:#0c0c10;border-color:#7888a8">
+                                <span class="theme-dot" style="background:#7888a8"></span>
+                            </div>
+                            <span class="theme-card-name">Slate</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-rose">
+                            <div class="theme-circle" style="background:#100a0c;border-color:#e06080">
+                                <span class="theme-dot" style="background:#e06080"></span>
+                            </div>
+                            <span class="theme-card-name">Rose</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-indigo">
+                            <div class="theme-circle" style="background:#080810;border-color:#7c6cf0">
+                                <span class="theme-dot" style="background:#7c6cf0"></span>
+                            </div>
+                            <span class="theme-card-name">Indigo</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-lime">
+                            <div class="theme-circle" style="background:#0a0e08;border-color:#88cc44">
+                                <span class="theme-dot" style="background:#88cc44"></span>
+                            </div>
+                            <span class="theme-card-name">Lime</span>
+                        </div>
+                        <div class="theme-card" data-theme="dark-black">
+                            <div class="theme-circle" style="background:#000;border-color:#666">
+                                <span class="theme-dot" style="background:#888"></span>
+                            </div>
+                            <span class="theme-card-name">Black</span>
+                        </div>
+                        <div class="theme-card" data-theme="light-white">
+                            <div class="theme-circle" style="background:#fff;border-color:#ccc">
+                                <span class="theme-dot" style="background:#6c63ff"></span>
+                            </div>
+                            <span class="theme-card-name">White</span>
+                        </div>
+                        <div class="theme-card" data-theme="bw">
+                            <div class="theme-circle" style="background:#0a0a0a;border-color:#555">
+                                <span class="theme-dot" style="background:#fff"></span>
+                            </div>
+                            <span class="theme-card-name">B&W</span>
+                        </div>
+                    </div>
+                    <button id="theme-apply-btn" class="sidebar-btn">{{ t.apply }}</button>
+                </div>
+                <!--* Language / Язык — выбор языка интерфейса -->
+                <div class="settings-section">
+                    <h4>{{ t.language }}</h4>
+                    <div class="settings-lang-row">
+                        <button class="lang-btn {% if lang == 'en' %}active{% endif %}" data-lang="en">🇬🇧 EN</button>
+                        <button class="lang-btn {% if lang == 'de' %}active{% endif %}" data-lang="de">🇩🇪 DE</button>
+                        <button class="lang-btn {% if lang == 'fr' %}active{% endif %}" data-lang="fr">🇫🇷 FR</button>
+                        <button class="lang-btn {% if lang == 'sr' %}active{% endif %}" data-lang="sr">🇷🇸 SR</button>
+                        <button class="lang-btn {% if lang == 'ru' %}active{% endif %}" data-lang="ru">🇷🇺 RU</button>
+                    </div>
+                </div>
+                <!--? History limit / Лимит истории — ограничение количества сохраняемых сообщений -->
+                <div class="settings-section">
+                    <h4>{{ t.history_limit }}</h4>
+                    <input type="number" id="history-limit-input" class="sidebar-input settings-key-input" value="10" min="1" max="50">
+                    <span class="history-limit-warn">{{ t.history_limit_warning }}</span>
+                </div>
+                <!--! API keys / API-ключи — OpenRouter, Fish Audio, Hugging Face -->
+                <div class="settings-section">
+                    <h4>{{ t.api_keys }}</h4>
+                    <label class="select-label">{{ t.or_key_label }}</label>
+                    <input type="password" id="or-key-input" class="sidebar-input settings-key-input" placeholder="sk-or-...">
+                    <label class="select-label">{{ t.fish_key_label }}</label>
+                    <input type="password" id="fish-key-input" class="sidebar-input settings-key-input" placeholder="...">
+                    <label class="select-label">{{ t.hf_key_label }}</label>
+                    <input type="password" id="hf-key-input" class="sidebar-input settings-key-input" placeholder="hf_...">
+                    <button id="save-keys-btn" class="sidebar-btn">{{ t.save_keys }}</button>
+                    <span id="keys-save-msg" class="voice-msg"></span>
+                </div>
+                <!--* System prompt / Системный промпт — редактирование инструкции для ИИ -->
+                <div class="settings-section">
+                    <h4>{{ t.system_prompt }}</h4>
+                    <textarea id="system-prompt-input" class="sidebar-input system-prompt-textarea"
+                              placeholder="{{ t.system_prompt_ph }}"></textarea>
+                    <button id="save-system-prompt-btn" class="sidebar-btn">{{ t.system_prompt_save }}</button>
+                    <span id="system-prompt-msg" class="voice-msg"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!--* Voice guide overlay / Окно инструкции по добавлению голоса -->
+    <div id="voice-guide-overlay" class="guide-overlay" style="display:none">
+        <div class="guide-modal">
+            <button id="guide-close" class="guide-close">&times;</button>
+            <h2>{{ t.guide_title }}</h2>
+            <div class="guide-steps">
+                <div class="guide-step">
+                    <div class="guide-step-num">1</div>
+                    <div class="guide-step-body">
+                        <p>{{ t.guide_step1 }}</p>
+                        <img src="/static/how_to_add_voice/step_1.png" alt="Step 1">
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-num">2</div>
+                    <div class="guide-step-body">
+                        <p>{{ t.guide_step2 }}</p>
+                        <img src="/static/how_to_add_voice/step_2.png" alt="Step 2">
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-num">3</div>
+                    <div class="guide-step-body">
+                        <p>{{ t.guide_step3 }}</p>
+                        <img src="/static/how_to_add_voice/step_3.jpg" alt="Step 3">
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-num">4</div>
+                    <div class="guide-step-body">
+                        <p>{{ t.guide_step4 }}</p>
+                        <img src="/static/how_to_add_voice/step_4.png" alt="Step 4">
+                    </div>
+                </div>
+                <div class="guide-step">
+                    <div class="guide-step-num">5</div>
+                    <div class="guide-step-body">
+                        <p>{{ t.guide_step5 }}</p>
+                        <img src="/static/how_to_add_voice/step_5.png" alt="Step 5">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!--! Script block / Блок скриптов — переводы, язык, основная логика приложения -->
+    <script>
+        const TRANSLATIONS = {{ t | tojson | safe }};
+        const CURRENT_LANG = "{{ lang }}";
+    </script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
