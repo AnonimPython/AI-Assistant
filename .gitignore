@@ -18,11 +18,13 @@ build/
 venv/
 env/
 
-#! PyInstaller
-#! Сборка
+#! PyInstaller output
+#! Результаты сборки
 *.spec
 *.app
 *.dmg
+build/AI Assistant/
+build/dist/
 
 #! Project data (user files stay in ~/AI Assistant/)
 #! Данные проекта (пользовательские файлы в ~/AI Assistant/)
