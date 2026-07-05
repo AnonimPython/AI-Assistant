@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  ai-assistant:
+    build: .
+    container_name: ai-assistant
+    ports:
+      - "5066:5066"
+    volumes:
+      - ~/.ai_assistant:/root/.ai_assistant
+    environment:
+      - PORT=5066
+      - DEBUG=false
+    restart: unless-stopped

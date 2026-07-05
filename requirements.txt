@@ -1,0 +1,5 @@
+flask>=3.0
+requests>=2.31
+pywebview>=4.4
+Pillow>=10.0
+ruamel.yaml>=0.18

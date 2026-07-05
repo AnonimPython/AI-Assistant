@@ -1,0 +1,45 @@
+#! OS junk
+#! Системный мусор
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+#! Python
+#! Питон
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+#! PyInstaller
+#! Сборка
+*.spec
+*.app
+*.dmg
+
+#! Project data (user files stay in ~/AI Assistant/)
+#! Данные проекта (пользовательские файлы в ~/AI Assistant/)
+data/
+
+#! IDE
+#! Редакторы
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+#! Logs
+#! Логи
+*.log
+
+#! Env files
+#! Файлы окружения
+.env
+.env.local
