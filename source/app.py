@@ -19,7 +19,7 @@ config = ConfigManager()
 
 VERSION     = "1.0"
 REPO_OWNER  = "AnonimPython"
-REPO_NAME   = "ai_assistant"
+REPO_NAME   = "AI-Assistant"
 GITHUB_API  = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
 
 
@@ -268,6 +268,7 @@ def api_get_config():
         "hf_key":        config.get_hf_key(),
         "history_limit": config.get_history_limit(),
         "system_prompt": config.get_system_prompt(),
+        "check_updates": config.get_check_updates(),
     }
     return jsonify(keys)
 
@@ -620,6 +621,16 @@ def api_set_theme():
     theme = (data.get("theme") or "").strip()
     config.set_theme(theme)
     return jsonify({"success": True, "theme": config.get_theme()})
+
+
+#* Toggle update check setting
+#* Вкл/выкл проверку обновлений
+@app.route("/api/check-updates-setting", methods=["POST"])
+def api_check_updates_setting():
+    data = request.json
+    enabled = data.get("enabled", True)
+    config.set_check_updates(enabled)
+    return jsonify({"success": True, "check_updates": config.get_check_updates()})
 
 
 #* Proxy for voice preview audio — forwards MP3 to avoid CORS

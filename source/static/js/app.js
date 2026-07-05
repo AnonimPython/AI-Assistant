@@ -242,6 +242,41 @@ function rebuildVoiceSelect(voices) {
 //* Загружаем и отображаем только добавленные голоса
 fetchCustomVoices();
 
+//* Check for updates and show banner if available
+//* Проверка обновлений и показ баннера
+async function checkForUpdates() {
+    try {
+        const configResp = await fetch("/api/config");
+        const configData = await configResp.json();
+        if (!configData.check_updates) return;
+
+        const r = await fetch("/api/check-update");
+        const data = await r.json();
+        if (data.update_available && data.latest) {
+            const text = (t.update_available || "A new version {version} is available!").replace("{version}", data.latest);
+            updateBannerText.textContent = text;
+            updateBanner.style.display = "flex";
+        }
+    } catch {}
+}
+
+// Dismiss update banner
+updateBannerDismiss.addEventListener("click", () => {
+    updateBanner.style.display = "none";
+});
+
+// Toggle update check setting
+checkUpdatesToggle.addEventListener("change", async () => {
+    const enabled = checkUpdatesToggle.checked;
+    try {
+        await fetch("/api/check-updates-setting", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled }),
+        });
+    } catch {}
+});
+
 //* Fetch custom voice list from the server
 //* Загрузка списка пользовательских голосов с сервера
 async function fetchCustomVoices() {
@@ -587,6 +622,11 @@ const settingsClose    = document.getElementById("settings-close");
 const themePresets     = document.getElementById("theme-presets");
 const themeApplyBtn    = document.getElementById("theme-apply-btn");
 
+const updateBanner      = document.getElementById("update-banner");
+const updateBannerText  = document.getElementById("update-banner-text");
+const updateBannerDismiss = document.getElementById("update-banner-dismiss");
+const checkUpdatesToggle = document.getElementById("check-updates-toggle");
+
 //* Get the currently active theme name from body classes
 //* Получение названия активной темы из классов body
 function getCurrentTheme() {
@@ -786,7 +826,18 @@ themeApplyBtn.addEventListener("click", async () => {
 
 
 // Init everything on page load
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     loadHistory();
     messageInput.focus();
+
+    // Load check-updates toggle state from server
+    try {
+        const r = await fetch("/api/config");
+        const d = await r.json();
+        if (d.check_updates !== undefined) {
+            checkUpdatesToggle.checked = d.check_updates;
+        }
+    } catch {}
+
+    checkForUpdates();
 });

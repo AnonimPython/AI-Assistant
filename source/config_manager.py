@@ -300,6 +300,17 @@ class ConfigManager:
             self._save_config()
 
 
+    def get_check_updates(self):
+        #* Returns whether update checks are enabled (default True)
+        #* Возвращает, включена ли проверка обновлений (по умолчанию True)
+        return self._data.get("check_updates", True)
+
+    def set_check_updates(self, enabled):
+        #* Saves update check preference to config
+        #* Сохраняет настройку проверки обновлений в конфиг
+        self._data["check_updates"] = bool(enabled)
+        self._save_config()
+
     def get_theme(self):
         #* Returns current theme name, default "dark-purple"
         #* Возвращает название текущей темы, по умолчанию "dark-purple"

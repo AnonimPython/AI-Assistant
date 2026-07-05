@@ -97,6 +97,11 @@
 
         <!--! Main chat area / Основная область чата — сообщения, индикаторы, ввод -->
         <main class="main-area">
+            <!--* Update banner / Баннер обновления -->
+            <div id="update-banner" class="update-banner" style="display:none">
+                <span id="update-banner-text"></span>
+                <button id="update-banner-dismiss" class="update-banner-dismiss">{{ t.update_dismiss }}</button>
+            </div>
             <!--* Chat header / Заголовок чата: статус, индикатор голоса -->
             <div class="chat-header">
                 <span id="status-indicator" class="status-dot"></span>
@@ -238,6 +243,15 @@
                         <button class="lang-btn {% if lang == 'sr' %}active{% endif %}" data-lang="sr">🇷🇸 SR</button>
                         <button class="lang-btn {% if lang == 'ru' %}active{% endif %}" data-lang="ru">🇷🇺 RU</button>
                     </div>
+                </div>
+                <!--* Update checks / Проверка обновлений -->
+                <div class="settings-section">
+                    <h4>{{ t.check_updates_label }}</h4>
+                    <label class="toggle-row">
+                        <input type="checkbox" id="check-updates-toggle" checked>
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-label">{{ t.check_updates_label }}</span>
+                    </label>
                 </div>
                 <!--? History limit / Лимит истории — ограничение количества сохраняемых сообщений -->
                 <div class="settings-section">

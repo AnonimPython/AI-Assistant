@@ -110,6 +110,9 @@ T = {
         "system_prompt_ph":       "Enter instructions for the AI...",
         "system_prompt_saved":    "Prompt saved!",
         "system_prompt_default":  "You are a helpful assistant. Always respond in Russian.",
+        "update_available": "A new version {version} is available!",
+        "update_dismiss": "Dismiss",
+        "check_updates_label": "Check for updates",
     },
     "ru": {
         #* Заголовки приложения и окон / App & window titles
@@ -211,6 +214,9 @@ T = {
         "system_prompt_ph":       "Введите инструкции для ИИ...",
         "system_prompt_saved":    "Промпт сохранён!",
         "system_prompt_default":  "You are a helpful assistant. Always respond in Russian.",
+        "update_available": "Доступна новая версия {version}!",
+        "update_dismiss": "Пропустить",
+        "check_updates_label": "Проверять обновления",
     },
     "de": {
         "app_title": "KI-Assistent",
@@ -289,6 +295,9 @@ T = {
         "system_prompt_ph":       "Anweisungen für die KI eingeben...",
         "system_prompt_saved":    "Prompt gespeichert!",
         "system_prompt_default":  "You are a helpful assistant. Always respond in the user's language.",
+        "update_available": "Neue Version {version} verfügbar!",
+        "update_dismiss": "Schließen",
+        "check_updates_label": "Auf Updates prüfen",
     },
     "fr": {
         "app_title": "Assistant IA",
@@ -367,6 +376,9 @@ T = {
         "system_prompt_ph":       "Entrez les instructions pour l'IA...",
         "system_prompt_saved":    "Prompt sauvegardé!",
         "system_prompt_default":  "You are a helpful assistant. Always respond in the user's language.",
+        "update_available": "Nouvelle version {version} disponible!",
+        "update_dismiss": "Ignorer",
+        "check_updates_label": "Vérifier les mises à jour",
     },
     "sr": {
         "app_title": "AI Asistent",
@@ -445,5 +457,8 @@ T = {
         "system_prompt_ph":       "Unesi instrukcije za AI...",
         "system_prompt_saved":    "Prompt sačuvan!",
         "system_prompt_default":  "You are a helpful assistant. Always respond in the user's language.",
+        "update_available": "Nova verzija {version} je dostupna!",
+        "update_dismiss": "Odbaci",
+        "check_updates_label": "Proveri ažuriranja",
     },
 }
