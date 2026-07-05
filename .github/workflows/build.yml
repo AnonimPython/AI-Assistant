@@ -1,0 +1,131 @@
+#! Build AI Assistant for macOS (.dmg) and Windows (.exe)
+#! Сборка AI Assistant для macOS (.dmg) и Windows (.exe)
+#
+# Triggers on any tag starting with "v" (e.g. v1.0, v2.3)
+#
+# macOS — .app → .dmg (—onedir, no UPX → fewer AV flags)
+# Windows — .exe via —onedir inside a portable folder
+#
+# Tips to reduce antivirus false positives:
+#   —onedir instead of —onefile (no self-extracting stub)
+#   no UPX compression
+#   version info embedded in .spec
+#   code signing (not set up here — needs a certificate)
+
+name: Build macOS + Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps
+        run: brew install portaudio
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install flask pywebview requests PyObjC
+
+      - name: Build .app
+        run: |
+          pyinstaller \
+            --noconfirm \
+            --onedir \
+            --windowed \
+            --name "AI Assistant" \
+            --icon source/static/app_img/icon.icns \
+            --add-data "source/templates:templates" \
+            --add-data "source/static:static" \
+            --add-data "source/translations.py:." \
+            --add-data "source/config_manager.py:." \
+            --hidden-import webview \
+            --hidden-import AppKit \
+            --hidden-import Flask \
+            main.py
+
+      - name: Package .dmg
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "AI Assistant" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "AI Assistant.app" 175 120 \
+            --hide-extension "AI Assistant.app" \
+            --app-drop-link 425 120 \
+            "AI_Assistant-macos.dmg" \
+            "dist/AI Assistant"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI_Assistant-macos
+          path: AI_Assistant-macos.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install flask requests
+
+      - name: Build .exe (onedir)
+        run: |
+          pyinstaller `
+            --noconfirm `
+            --onedir `
+            --windowed `
+            --name "AI Assistant" `
+            --icon source/static/app_img/icon.ico `
+            --add-data "source/templates;templates" `
+            --add-data "source/static;static" `
+            --add-data "source/translations.py;." `
+            --add-data "source/config_manager.py;." `
+            --hidden-import Flask `
+            --version-file version_info.txt `
+            main.py
+
+      - name: Package as ZIP
+        run: |
+          Compress-Archive -Path "dist/AI Assistant/*" -DestinationPath "AI_Assistant-windows.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI_Assistant-windows
+          path: AI_Assistant-windows.zip
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            AI_Assistant-macos/AI_Assistant-macos.dmg
+            AI_Assistant-windows/AI_Assistant-windows.zip
+          generate_release_notes: true
