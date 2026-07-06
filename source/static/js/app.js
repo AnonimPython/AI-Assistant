@@ -830,25 +830,13 @@ themeApplyBtn.addEventListener("click", async () => {
 
 //* Splash screen animation
 //* Анимация заставки при запуске
-const SPLASH_DURATION = 2800;
+const SPLASH_DURATION = 2600;
 
-const animations = ["typewriter", "neon", "cascade"];
+const animations = ["glide", "pulse", "rotate"];
 
 function runSplashAnimation() {
     const chosen = animations[Math.floor(Math.random() * animations.length)];
     splashOverlay.classList.add("splash-" + chosen);
-
-    if (chosen === "cascade") {
-        const text = splashTitle.textContent;
-        splashTitle.textContent = "";
-        for (const ch of text) {
-            const span = document.createElement("span");
-            span.className = "splash-char";
-            span.textContent = ch === " " ? "\u00A0" : ch;
-            span.style.animationDelay = (Math.random() * 0.6).toFixed(2) + "s";
-            splashTitle.appendChild(span);
-        }
-    }
 }
 
 function hideSplash() {
