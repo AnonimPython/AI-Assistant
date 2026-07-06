@@ -627,6 +627,9 @@ const updateBannerText  = document.getElementById("update-banner-text");
 const updateBannerDismiss = document.getElementById("update-banner-dismiss");
 const checkUpdatesToggle = document.getElementById("check-updates-toggle");
 
+const splashOverlay = document.getElementById("splash-overlay");
+const splashTitle   = document.getElementById("splash-title");
+
 //* Get the currently active theme name from body classes
 //* Получение названия активной темы из классов body
 function getCurrentTheme() {
@@ -825,19 +828,54 @@ themeApplyBtn.addEventListener("click", async () => {
 //? Тест моделей — проверяет каждую модель и показывает OK/ERROR
 
 
+//* Splash screen animation
+//* Анимация заставки при запуске
+const SPLASH_DURATION = 2800;
+
+const animations = ["typewriter", "neon", "cascade"];
+
+function runSplashAnimation() {
+    const chosen = animations[Math.floor(Math.random() * animations.length)];
+    splashOverlay.classList.add("splash-" + chosen);
+
+    if (chosen === "cascade") {
+        const text = splashTitle.textContent;
+        splashTitle.textContent = "";
+        for (const ch of text) {
+            const span = document.createElement("span");
+            span.className = "splash-char";
+            span.textContent = ch === " " ? "\u00A0" : ch;
+            span.style.animationDelay = (Math.random() * 0.6).toFixed(2) + "s";
+            splashTitle.appendChild(span);
+        }
+    }
+}
+
+function hideSplash() {
+    splashOverlay.classList.add("hidden");
+    setTimeout(() => {
+        splashOverlay.style.display = "none";
+    }, 600);
+}
+
 // Init everything on page load
 document.addEventListener("DOMContentLoaded", async () => {
-    loadHistory();
-    messageInput.focus();
+    runSplashAnimation();
 
-    // Load check-updates toggle state from server
-    try {
-        const r = await fetch("/api/config");
-        const d = await r.json();
-        if (d.check_updates !== undefined) {
-            checkUpdatesToggle.checked = d.check_updates;
-        }
-    } catch {}
+    setTimeout(async () => {
+        hideSplash();
 
-    checkForUpdates();
+        loadHistory();
+        messageInput.focus();
+
+        try {
+            const r = await fetch("/api/config");
+            const d = await r.json();
+            if (d.check_updates !== undefined) {
+                checkUpdatesToggle.checked = d.check_updates;
+            }
+        } catch {}
+
+        checkForUpdates();
+    }, SPLASH_DURATION);
 });
