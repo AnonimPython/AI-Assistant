@@ -627,8 +627,7 @@ const updateBannerText  = document.getElementById("update-banner-text");
 const updateBannerDismiss = document.getElementById("update-banner-dismiss");
 const checkUpdatesToggle = document.getElementById("check-updates-toggle");
 
-const splashOverlay = document.getElementById("splash-overlay");
-const splashTitle   = document.getElementById("splash-title");
+
 
 //* Get the currently active theme name from body classes
 //* Получение названия активной темы из классов body
@@ -828,42 +827,18 @@ themeApplyBtn.addEventListener("click", async () => {
 //? Тест моделей — проверяет каждую модель и показывает OK/ERROR
 
 
-//* Splash screen animation
-//* Анимация заставки при запуске
-const SPLASH_DURATION = 2600;
-
-const animations = ["glide", "pulse", "rotate"];
-
-function runSplashAnimation() {
-    const chosen = animations[Math.floor(Math.random() * animations.length)];
-    splashOverlay.classList.add("splash-" + chosen);
-}
-
-function hideSplash() {
-    splashOverlay.classList.add("hidden");
-    setTimeout(() => {
-        splashOverlay.style.display = "none";
-    }, 600);
-}
-
 // Init everything on page load
 document.addEventListener("DOMContentLoaded", async () => {
-    runSplashAnimation();
+    loadHistory();
+    messageInput.focus();
 
-    setTimeout(async () => {
-        hideSplash();
+    try {
+        const r = await fetch("/api/config");
+        const d = await r.json();
+        if (d.check_updates !== undefined) {
+            checkUpdatesToggle.checked = d.check_updates;
+        }
+    } catch {}
 
-        loadHistory();
-        messageInput.focus();
-
-        try {
-            const r = await fetch("/api/config");
-            const d = await r.json();
-            if (d.check_updates !== undefined) {
-                checkUpdatesToggle.checked = d.check_updates;
-            }
-        } catch {}
-
-        checkForUpdates();
-    }, SPLASH_DURATION);
+    checkForUpdates();
 });
