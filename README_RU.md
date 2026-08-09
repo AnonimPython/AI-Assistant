@@ -175,3 +175,9 @@ ai_assistant/
 - **TTS** -- Fish Audio API
 - **Десктоп** -- pywebview
 - **Docker** -- multi-stage build
+
+---
+
+## Roadmap / Планы
+
+- [ ] **Computer Use / Управление ПК** — AI видит экран (скриншоты), двигает мышь, нажимает клавиши, управляет браузером. В разработке. Требует вижен-модель + function calling.

@@ -67,9 +67,9 @@ def get_icon_path():
 
 
 
+#* Creates a native desktop window that wraps the Flask web app
+#* Создаёт нативное десктопное окно, оборачивающее Flask веб-приложение
 def main():
-    #* Creates a native desktop window that wraps the Flask web app
-    #* Создаёт нативное десктопное окно, оборачивающее Flask веб-приложение
     #? set dock icon (no-op on non-macOS)
     set_dock_icon()
 

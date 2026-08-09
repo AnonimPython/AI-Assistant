@@ -10,10 +10,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ t.app_title }}</title>
     <link rel="icon" type="image/png" href="/static/app_img/icon.png">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ cache_bust }}">
     <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
 </head>
 <body class="theme-{{ theme }}">
+    <!--* Splash screen / Заставка при запуске -->
+    <div id="splash-overlay" class="splash-overlay">
+        <div class="splash-content">
+            <span class="splash-title">AI Assistant</span>
+        </div>
+    </div>
     <!--! Sidebar / Боковая панель — навигация, управление моделью, голосом и настройками -->
     <div class="app-container">
         <aside class="sidebar">
@@ -110,19 +116,43 @@
             <!--? Messages container / Контейнер сообщений — сюда рендерятся все сообщения чата -->
             <div id="chat-messages" class="chat-messages"></div>
 
-            <!--* Input area / Область ввода: текстовое поле, микрофон, кнопка отправки -->
+            <!--* Input area / Область ввода: файлы, текстовое поле, микрофон, кнопка отправки -->
             <div class="input-area">
-                <textarea id="message-input" class="message-input"
-                          placeholder="{{ t.input_placeholder }}" rows="1"
-                          oninput="autoResize(this)"></textarea>
-                <button id="send-btn" class="send-btn" disabled>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="12" y1="19" x2="12" y2="5"></line>
-                        <polyline points="5 12 12 5 19 12"></polyline>
-                    </svg>
-                </button>
+                <div id="uploaded-files" class="uploaded-files"></div>
+                <div class="input-row">
+                    <button id="file-upload-btn" class="input-icon-btn" title="Upload file / Загрузить файл">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                        </svg>
+                    </button>
+                    <input type="file" id="file-input" multiple style="display:none" accept=".txt,.py,.js,.html,.css,.json,.md,.csv,.pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.svg,.mp3,.wav,.zip">
+                    <textarea id="message-input" class="message-input"
+                              placeholder="{{ t.input_placeholder }}" rows="1"
+                              oninput="autoResize(this)"></textarea>
+                    <button id="mic-btn" class="input-icon-btn" title="Voice input / Голосовой ввод">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="22"/>
+                        </svg>
+                    </button>
+                    <button id="send-btn" class="send-btn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="19" x2="12" y2="5"></line>
+                            <polyline points="5 12 12 5 19 12"></polyline>
+                        </svg>
+                    </button>
+                </div>
+                <div id="mic-status" class="mic-status"></div>
             </div>
         </main>
+    </div>
+
+    <!--* Drop zone overlay / Оверлей для перетаскивания файлов -->
+    <div id="drop-zone" class="drop-zone" style="display:none">
+        <div class="drop-zone-content">
+            <span class="drop-plus">+</span>
+        </div>
     </div>
 
     <!--? Hidden audio player / Скрытый аудиоплеер — для воспроизведения голосовых ответов -->
@@ -230,6 +260,12 @@
                             </div>
                             <span class="theme-card-name">B&W</span>
                         </div>
+                        <div class="theme-card" data-theme="dark-clown">
+                            <div class="theme-circle" style="background:#1a0a00;border-color:#ff0">
+                                <span class="theme-dot" style="background:#f0f"></span>
+                            </div>
+                            <span class="theme-card-name">🤡 Clown</span>
+                        </div>
                     </div>
                     <button id="theme-apply-btn" class="sidebar-btn">{{ t.apply }}</button>
                 </div>
@@ -278,6 +314,27 @@
                               placeholder="{{ t.system_prompt_ph }}"></textarea>
                     <button id="save-system-prompt-btn" class="sidebar-btn">{{ t.system_prompt_save }}</button>
                     <span id="system-prompt-msg" class="voice-msg"></span>
+                </div>
+                <!--* Agents / Агенты — проверка сайтов на платность/бесплатность -->
+                <div class="settings-section">
+                    <h4>{{ t.agents_title }}</h4>
+                    <div class="agent-check-row">
+                        <input type="text" id="agent-url-input" class="sidebar-input"
+                               placeholder="{{ t.agent_url_ph }}">
+                        <button id="agent-check-btn" class="sidebar-btn">{{ t.agent_check }}</button>
+                    </div>
+                    <div id="agent-result" class="agent-result"></div>
+                    <button id="agent-save-btn" class="sidebar-btn" style="display:none">{{ t.agent_save }}</button>
+                    <div id="saved-agents-list" class="saved-agents-list"></div>
+                </div>
+                <!--* Beta features / Бета-функции -->
+                <div class="settings-section beta-section">
+                    <div class="beta-divider"><span>{{ t.beta_title }}</span></div>
+                    <label class="toggle-row">
+                        <input type="checkbox" id="branch-toggle">
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-label">{{ t.branch_label }}</span>
+                    </label>
                 </div>
             </div>
         </div>
@@ -332,6 +389,6 @@
         const TRANSLATIONS = {{ t | tojson | safe }};
         const CURRENT_LANG = "{{ lang }}";
     </script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v={{ cache_bust }}"></script>
 </body>
 </html>

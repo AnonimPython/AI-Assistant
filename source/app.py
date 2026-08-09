@@ -7,15 +7,111 @@ import base64
 import os
 import re
 import sys
+import io
 import zipfile
 import shutil
 import tempfile
 import traceback
+import fitz
+import docx
+import time
+import threading
+import concurrent.futures
 
 from config_manager import ConfigManager, get_links
 from translations import T
+from desktop_actions import execute_command
 app  = Flask(__name__)
 config = ConfigManager()
+
+
+#* Desktop-commands documentation appended to the system prompt so the AI
+#* knows it can control the computer. The AI emits special ⟦...⟧ tokens,
+#* the server executes them and replaces them with a short confirmation.
+#* Документация команд управления компьютером, добавляемая в системный
+#* промпт, чтобы ИИ умел управлять ПК. ИИ выдаёт токены ⟦...⟧, сервер
+#* выполняет их и заменяет коротким подтверждением.
+COMMANDS_DOC = (
+    "\n\nYou can also control the user's computer. "
+    "When the user asks you to perform one of the actions below, include the matching "
+    "command token exactly as written (instead of describing it in words), then add a "
+    "short confirmation sentence in words. Never wrap a token in code formatting. "
+    "You may use more than one token. Only act when the user explicitly asks:\n"
+    "- Open a website: ⟦open:<url-or-site-name>⟧  — translate site names to URLs yourself "
+    "(e.g. \"ютуб\"→https://youtube.com, \"github\"→https://github.com).\n"
+    "- Search the web: ⟦search:<query>⟧\n"
+    "- Minimize/hide all windows (show desktop): ⟦minimize_all⟧"
+)
+
+
+def _system_prompt():
+    #* Returns the user system prompt plus the desktop-commands documentation
+    #* Возвращает системный промпт пользователя плюс документацию команд ПК
+    return config.get_system_prompt() + COMMANDS_DOC
+
+
+#* Regex for command tokens: ⟦kind:value⟧ or ⟦kind⟧
+#* Регулярка для токенов команд: ⟦тип:значение⟧ или ⟦тип⟧
+CMD_RE = re.compile(r'⟦(open|search|minimize_all)(?::([^⟧]*))?⟧', re.DOTALL)
+
+
+def _cmd_msg(kind, ok, detail):
+    #* Builds a short localized confirmation/error for an executed command
+    #* Формирует короткое локализованное подтверждение/ошибку для команды
+    if kind == "open":
+        return t("cmd_open") + ": " + detail if ok else t("cmd_open_fail") + ": " + detail
+    if kind == "search":
+        return t("cmd_search") + ' "' + detail + '".' if ok else t("cmd_search_fail")
+    if kind == "minimize_all":
+        return t("cmd_minimize") if ok else t("cmd_minimize_fail")
+    return ""
+
+
+def _execute_commands(text):
+    #* Finds command tokens in the AI reply, executes each action and replaces
+    #* the token with a short confirmation. Returns the new reply text.
+    #* Находит токены команд в ответе ИИ, выполняет действие и заменяет токен
+    #* коротким подтверждением. Возвращает новый текст ответа.
+    if not text or not CMD_RE.search(text):
+        return text
+    def repl(m):
+        kind   = m.group(1)
+        value  = (m.group(2) or "").strip()
+        try:
+            ok, detail = execute_command(kind, value)
+        except Exception as ex:
+            ok, detail = False, str(ex)[:80]
+        return " " + _cmd_msg(kind, ok, detail) + " "
+    text = CMD_RE.sub(repl, text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+#* Extract text from attached files (PDF, DOCX, TXT) / Извлекает текст из прикреплённых файлов
+#* Возвращает список строк вида "Attached file 'name':\n```\ntext\n```"
+def extract_files_text(files):
+    parts = []
+    for f in (files or []):
+        name = f.get("name", "file")
+        data_b64 = f.get("data", "")
+        if not data_b64:
+            continue
+        try:
+            raw = base64.b64decode(data_b64)
+            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            text = ""
+            if ext == "pdf":
+                pdf = fitz.open(stream=raw, filetype="pdf")
+                text = "\n".join(page.get_text() for page in pdf)
+            elif ext == "docx":
+                doc = docx.Document(io.BytesIO(raw))
+                text = "\n".join(p.text for p in doc.paragraphs)
+            else:
+                text = raw.decode("utf-8", errors="replace")
+            parts.append(f"--- Attached file '{name}':\n```\n{text}\n```")
+        except Exception as ex:
+            parts.append(f"--- Attached file '{name}':\n```\n[Error reading file: {ex}]\n```")
+    return parts
+
 
 VERSION     = "1.0"
 REPO_OWNER  = "AnonimPython"
@@ -52,7 +148,7 @@ def _clean_reply(text):
 #! Вызов OpenRouter API — требуется валидный API ключ
 def _call_openrouter(model_id, message, history=None):
     limit = config.get_history_limit()
-    sp = config.get_system_prompt()
+    sp = _system_prompt()
     messages = [{"role": "system", "content": sp}]
     if history:
         for h in history[-(limit):]:  # Walk recent history to build message context
@@ -102,7 +198,7 @@ def _call_openrouter(model_id, message, history=None):
 # Пример: for token in _call_openrouter_stream("gpt-4", "Привет"): print(token)
 def _call_openrouter_stream(model_id, message, history=None):
     limit = config.get_history_limit()
-    sp = config.get_system_prompt()
+    sp = _system_prompt()
     messages = [{"role": "system", "content": sp}]
     if history:
         for h in history[-(limit):]:  # Walk recent history to build message context
@@ -162,7 +258,7 @@ def _call_huggingface(model_id, message, history=None):
     api_url = f"https://api-inference.huggingface.co/models/{model_id}"
 
     limit = config.get_history_limit()
-    sp = config.get_system_prompt()
+    sp = _system_prompt()
     prompt = f"<|system|>\n{sp}\n"
     if history:
         for h in history[-(limit):]:  # Walk recent history to build conversation prompt
@@ -210,11 +306,65 @@ def _call_huggingface(model_id, message, history=None):
 
 
 
+#* Prepares text for TTS: drops code blocks, inline code and markdown noise,
+#* so the voice reads only natural speech — never code or syntax garbage.
+#* Готовит текст для озвучки: убирает блоки кода, инлайн-код и разметку,
+#* чтобы голос читал только связную речь, а не код и символы.
+def _strip_md(text):
+    if not text:
+        return ""
+    #? Remove fenced code blocks completely (never read code aloud)
+    #? Полностью убираем блоки кода (код не озвучиваем)
+    text = re.sub(r'```[\s\S]*?```', ' ', text)
+    text = re.sub(r'^```.*$', ' ', text, flags=re.MULTILINE)   # stray fences
+    #? Inline code: keep only short word-like tokens (pip install, file.py),
+    #? drop long or symbol-heavy snippets that the voice would mangle.
+    #? Инлайн-код: оставляем только короткие слова, длинные/символьные куски выкидываем.
+    def _inline(m):
+        s = m.group(1).strip()
+        if 0 < len(s) <= 40 and re.fullmatch(r'[\w\-.,/\\ :]+', s, flags=re.UNICODE):
+            return s
+        return ' '
+    text = re.sub(r'`([^`]+)`', _inline, text)
+    #? Markdown cleanup / Очистка markdown-разметки
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'(\*{1,3}|_{1,3})(.*?)\1', r'\2', text)
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    text = re.sub(r'!\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    text = re.sub(r'^(?:---|\*\*\*|___)\s*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^[\s]*[-*+]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^[\s]*\d+\.\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^[\s]*\|[\s\-:|]+\|[\s\-:|]*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'~~(.*?)~~', r'\1', text)
+    text = re.sub(r'https?://\S+', ' ', text)
+    #? Neutralize code-typical symbols so they don't break prosody / intonation
+    #? Нейтрализуем типичные для кода символы, чтобы не ломать интонацию
+    text = re.sub(r'[(){}\[\]<>=;:|`~^*]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
 #* Converts text to speech via Fish Audio API, returns base64 WAV
 #* Преобразует текст в речь через Fish Audio API, возвращает WAV в base64
 # Example: _call_tts("Hello world", "some_voice_id") → base64-encoded WAV string
 # Пример: _call_tts("Привет мир", "some_voice_id") → строка WAV в base64
 def _call_tts(text, voice_id):
+    text = _strip_md(text)  # Clean markdown before TTS
+    #? Nothing speakable left (e.g. the answer is pure code) → skip voice entirely
+    #? Говорить нечего (например, ответ — сплошной код) → не озвучиваем вообще
+    if not text or len(text) < 10:
+        return None
+    #? Cap length at a sentence boundary so speech stays smooth and quick
+    #? Ограничиваем длину по границе предложения, чтобы речь была плавной и быстрой
+    MAX_TTS = 1600
+    if len(text) > MAX_TTS:
+        cut = text[:MAX_TTS]
+        for ch in ('. ', '! ', '? ', '.', '!', '?'):
+            idx = cut.rfind(ch)
+            if idx > MAX_TTS // 2:
+                cut = cut[:idx + 1]
+                break
+        text = cut.strip()
     r = requests.post(
         "https://api.fish.audio/v1/tts",
         headers={
@@ -244,7 +394,8 @@ def index():
                            links=get_links(),
                            lang=lang,
                            theme=theme,
-                           t=T[lang])
+                           t=T[lang],
+                           cache_bust=str(int(time.time())))
 
 
 
@@ -410,6 +561,10 @@ def api_chat():
             #? Выбираем самый короткий непустой кандидат
             reply = min((c for c in strip_candidates if c), key=len, default=reply)
 
+        #* Execute any desktop-command tokens the AI emitted (open site, search, ...)
+        #* Выполняем токены команд ПК, которые выдал ИИ (открыть сайт, поиск, ...)
+        reply = _execute_commands(reply)
+
         #* Save AI response to history
         #* Сохраняем ответ ИИ в историю
         config.add_to_history("assistant", reply)
@@ -431,15 +586,24 @@ def api_chat():
 
 
 
+
+#* Computer-use vision loop — takes screenshots, calls vision model, executes actions
+#* Видео-цикл управления компьютером — скриншоты, вижен-модель, исполнение действий
 #? Streaming chat endpoint — Server-Sent Events for real-time token output
 #? Стрим-чат endpoint — Server-Sent Events для вывода токенов в реальном времени
 @app.route("/api/chat/stream", methods=["POST"])
 def api_chat_stream():
     data     = request.json
     msg      = data.get("message", "")
+    files    = data.get("files", [])
     model_id = data.get("model", "")
     voice_id = data.get("voice", "")
     muted    = data.get("muted", False)
+
+    if files:
+        file_parts = extract_files_text(files)
+        if file_parts:
+            msg = "\n\n".join(file_parts) + "\n\nUser question:\n" + msg
 
     if not config.is_configured():
         return jsonify({"reply": "Please configure API keys first."})
@@ -520,6 +684,13 @@ def api_chat_stream():
                 reply = reply_cleaned
                 yield f"data: {json.dumps({'type': 'replace', 'content': reply})}\n\n"
 
+            #* Execute any desktop-command tokens the AI emitted (open site, search, ...)
+            #* Выполняем токены команд ПК, которые выдал ИИ (открыть сайт, поиск, ...)
+            reply_executed = _execute_commands(reply)
+            if reply_executed != reply:
+                reply = reply_executed
+                yield f"data: {json.dumps({'type': 'replace', 'content': reply})}\n\n"
+
             config.add_to_history("assistant", reply)
 
             audio_b64 = None
@@ -552,9 +723,93 @@ def api_tts():
 
     try:
         audio_b64 = _call_tts(text, voice)
+        if not audio_b64:
+            return jsonify({"error": "Nothing to read aloud"}), 200
         return jsonify({"audio": audio_b64})
     except Exception as ex:
         return jsonify({"error": str(ex)}), 500
+
+
+#* Speech-to-text via a local faster-whisper model. Runs fully offline, so
+#* Russian recognition keeps working even when the HF inference host is
+#* unreachable. The model is loaded once and cached for later requests.
+#* Распознавание речи через локальную модель faster-whisper. Работает
+#* офлайн, поэтому распознавание русского работает даже когда хост HF
+#* inference недоступен. Модель загружается один раз и кэшируется.
+#* Returns {"text": ...} / Возвращает {"text": ...}
+_whisper_model = None
+_whisper_lock = threading.Lock()
+_WHISPER_MODEL_NAME = "small"
+
+
+def _get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None:
+        with _whisper_lock:
+            if _whisper_model is None:
+                from faster_whisper import WhisperModel
+                _whisper_model = WhisperModel(
+                    _WHISPER_MODEL_NAME, device="cpu", compute_type="int8"
+                )
+    return _whisper_model
+
+
+#* Normalizes an app language tag ("ru-RU", "en-US", ...) to an ISO 639-1 code
+#* Приводит языковой тег приложения ("ru-RU", "en-US", ...) к коду ISO 639-1
+def _stt_lang(lang):
+    if not lang:
+        return None
+    code = str(lang).split("-")[0].lower()
+    if len(code) == 2:
+        return code
+    return None
+
+
+def _stt(audio_bytes, lang="ru"):
+    try:
+        model = _get_whisper_model()
+    except Exception as ex:
+        print("STT: whisper model load failed:", ex)
+        return None
+
+    path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
+            f.write(audio_bytes)
+            path = f.name
+        segments, _info = model.transcribe(path, language=_stt_lang(lang))
+        return " ".join(s.text.strip() for s in segments).strip() or None
+    except Exception as ex:
+        print("STT error:", ex)
+        return None
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+@app.route("/api/stt", methods=["POST"])
+def api_stt():
+    if not config.is_configured():
+        return jsonify({"error": "Not configured"}), 400
+
+    data = request.get_json(silent=True) or {}
+    audio_b64 = data.get("audio", "")
+    lang = data.get("lang", "ru")
+    if not audio_b64:
+        return jsonify({"error": "No audio"}), 400
+
+    try:
+        raw = base64.b64decode(audio_b64)
+        text = _stt(raw, lang)
+        if not text:
+            return jsonify({"error": "Speech recognition failed"}), 500
+        return jsonify({"text": text})
+    except Exception as ex:
+        traceback.print_exc()
+        return jsonify({"error": str(ex)[:200]}), 500
 
 
 
@@ -631,6 +886,91 @@ def api_check_updates_setting():
     enabled = data.get("enabled", True)
     config.set_check_updates(enabled)
     return jsonify({"success": True, "check_updates": config.get_check_updates()})
+
+
+#* Check if a URL is free or paid by analyzing page content
+#* Проверка, платный или бесплатный сайт по URL
+@app.route("/api/agents/check-url", methods=["POST"])
+def api_agents_check_url():
+    data = request.json
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"success": False, "error": "URL required"}), 400
+
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    path = parsed.path.strip("/")
+    #* The full path is the model ID (e.g. "tencent/hy3:free")
+    #* Полный путь — это ID модели (например "tencent/hy3:free")
+    model_id = path if path else parsed.netloc.replace("www.", "")
+
+    #* Determine status from the model name: if ":free" suffix → free
+    #* Определяем статус по имени модели: если есть ":free" → бесплатно
+    if ":free" in model_id:
+        status = "free"
+        label = "Free"
+    else:
+        status = "paid"
+        label = "Paid"
+
+    return jsonify({
+        "success": True,
+        "name": model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id,
+        "model_id": model_id,
+        "url": url,
+        "status": status,
+        "label": label,
+    })
+
+
+#* List custom models
+#* Список кастомных моделей
+@app.route("/api/agents/list", methods=["GET"])
+def api_agents_list():
+    resp = jsonify({"agents": config.get_custom_models()})
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+#* Add a model from URL — extracts model ID and adds to custom model list
+#* Добавить модель по URL — извлекает ID модели и добавляет в список кастомных
+@app.route("/api/agents/add", methods=["POST"])
+def api_agents_add():
+    data = request.json
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"success": False, "error": "url required"}), 400
+
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    path = parsed.path.strip("/")
+    model_id = path if path else parsed.netloc.replace("www.", "")
+
+    added = config.add_custom_model(model_id)
+    return jsonify({
+        "success": True,
+        "added": added,
+        "model": {
+            "provider": "openrouter",
+            "id": model_id,
+            "name": model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id,
+        }
+    })
+
+
+#* Remove a custom model by URL
+#* Удалить кастомную модель по URL
+@app.route("/api/agents/remove", methods=["POST"])
+def api_agents_remove():
+    data = request.json
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"success": False, "error": "url required"}), 400
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    model_id = parsed.path.strip("/")
+    config.remove_custom_model(model_id)
+    return jsonify({"success": True})
 
 
 #* Proxy for voice preview audio — forwards MP3 to avoid CORS
@@ -835,6 +1175,54 @@ def api_perform_update():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+#* Beta: generate multiple response variants (branching)
+#* Бета: генерация нескольких вариантов ответа (ветвление)
+@app.route("/api/chat/branch", methods=["POST"])
+def api_chat_branch():
+    data = request.json
+    msg = data.get("message", "")
+    model_id = data.get("model", "")
+
+    if not config.is_configured():
+        return jsonify({"error": "API keys not configured"}), 400
+
+    config.add_to_history("user", msg)
+    chat_history = config.get_history()
+    limit = config.get_history_limit()
+    sp = _system_prompt()
+    messages = [{"role": "system", "content": sp}]
+    for h in chat_history[-(limit):]:
+        if h["role"] in ("user", "assistant"):
+            messages.append({"role": h["role"], "content": h["content"]})
+
+    def _call():
+        r = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {config.get_or_key()}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/evgenijlevin/ai_assistant",
+            },
+            json={
+                "model": model_id,
+                "messages": messages,
+                "max_tokens": 4096,
+                "temperature": 0.9,
+            },
+            timeout=60,
+        )
+        if r.status_code != 200:
+            return "[error]"
+        data = r.json()
+        return data.get("choices", [{}])[0].get("message", {}).get("content", "") or "[empty]"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+        futures = [ex.submit(_call) for _ in range(3)]
+        results = [f.result(timeout=120) for f in futures]
+
+    return jsonify({"branches": results})
 
 
 if __name__ == "__main__":

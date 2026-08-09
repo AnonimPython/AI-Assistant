@@ -646,9 +646,119 @@ html, body {
     padding: 16px 24px;
     border-top: 1px solid var(--border-color);
     display: flex;
-    gap: 12px;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.uploaded-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.file-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--text-primary);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    animation: chipIn 0.2s ease-out;
+}
+
+.file-chip-icon {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+}
+
+.file-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-chip-remove {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+}
+
+.file-chip-remove:hover {
+    color: var(--danger);
+}
+
+@keyframes chipIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.input-row {
+    display: flex;
+    gap: 8px;
     align-items: flex-end;
 }
+
+.input-icon-btn {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.input-icon-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.input-icon-btn.recording {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: rgba(255,71,87,0.1);
+    animation: micPulse 1.2s infinite;
+}
+
+@keyframes micPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,71,87,0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(255,71,87,0); }
+}
+
+.mic-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: center;
+    min-height: 18px;
+    padding: 2px 0;
+    transition: color 0.2s;
+}
+.mic-status.error {
+    color: var(--danger);
+}
+.mic-status.success {
+    color: var(--success);
+}
+
 
 .message-input {
     flex: 1;
@@ -702,6 +812,45 @@ html, body {
 .send-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+/* Drop zone overlay */
+.drop-zone {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.6);
+    animation: dropFadeIn 0.15s ease-out;
+}
+
+@keyframes dropFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.drop-zone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.drop-plus {
+    font-size: 120px;
+    font-weight: 200;
+    color: var(--accent);
+    opacity: 0.8;
+    text-shadow: 0 0 60px var(--accent-glow);
+    line-height: 1;
+    animation: dropPulse 1s ease-in-out infinite;
+}
+
+@keyframes dropPulse {
+    0%, 100% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.1); opacity: 1; }
 }
 
 /* ===== RESPONSIVE ===== */
@@ -1065,6 +1214,36 @@ html, body {
     margin-bottom: 0;
 }
 
+/* Beta features divider — centered label, gray lines on both sides.
+   Отделяет экспериментальные бета-функции от основного интерфейса.
+   Разделитель бета-функций — надпись по центру, серые линии по краям. */
+.beta-section {
+    margin-top: 10px;
+}
+.beta-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px;
+    white-space: nowrap;
+}
+.beta-divider::before,
+.beta-divider::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--border-color);
+    min-width: 8px;
+}
+.beta-divider span {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    opacity: 0.85;
+}
+
 .settings-section h4 {
     font-size: 14px;
     font-weight: 600;
@@ -1387,6 +1566,58 @@ body.theme-bw {
     --send-icon: #0a0a0a;
 }
 
+/*!
+ * 🤡 CLOWN THEME — яркая, смешная, нелепая цветовая схема
+ * Создана для веселья. Если вам грустно — включите её.
+ */
+body.theme-dark-clown {
+    --bg-primary: #1a0a00;
+    --bg-secondary: #2a1000;
+    --bg-card: #3a1800;
+    --bg-input: #2a0e00;
+    --border-color: #5a2a00;
+    --text-primary: #ffff00;
+    --text-secondary: #ffaa00;
+    --accent: #ff00ff;
+    --accent-hover: #ff44ff;
+    --accent-glow: rgba(255, 0, 255, 0.3);
+    --user-msg: #4a1a00;
+    --bot-msg: #3a1200;
+    --send-icon: #000;
+}
+/*!
+ * ─── Как добавить свою тему ──────────────────────────────────
+ * Чтобы создать новую цветовую схему:
+ *
+ * 1. Скопируйте блок "body.theme-dark-XXX { ... }" выше.
+ * 2. Замените XXX на название темы (например, "ocean").
+ * 3. Поменяйте значения CSS-переменных:
+ *      --bg-primary      — основной фон страницы
+ *      --bg-secondary    — фон боковой панели
+ *      --bg-card         — фон карточек и модалок
+ *      --bg-input        — фон полей ввода
+ *      --border-color    — цвет границ
+ *      --text-primary    — основной цвет текста
+ *      --text-secondary  — второстепенный цвет текста
+ *      --accent          — акцентный цвет (кнопки, ссылки)
+ *      --accent-hover    — акцент при наведении
+ *      --accent-glow     — свечение акцента (rgba)
+ *      --user-msg        — фон сообщения пользователя
+ *      --bot-msg         — фон сообщения бота
+ *      --send-icon       — цвет иконки отправки (только для светлых тем)
+ *
+ * 4. В файле index.html добавьте карточку темы:
+ *    <div class="theme-card" data-theme="dark-ocean">
+ *        <div class="theme-circle" style="background:...;border-color:...">
+ *            <span class="theme-dot" style="background:..."></span>
+ *        </div>
+ *        <span class="theme-card-name">Ocean</span>
+ *    </div>
+ *
+ * 5. Готово! Тема появится в палитре настроек.
+ * ──────────────────────────────────────────────────────────────
+ */
+
 /*! Guide overlay / Окно инструкции */
 .guide-overlay {
     display: none;
@@ -1498,28 +1729,26 @@ body.theme-bw {
     align-items: center;
     justify-content: center;
     background: var(--bg-primary);
-    transition: opacity 0.5s ease, visibility 0.5s ease;
+    transition: opacity 0.5s ease, backdrop-filter 0.5s ease;
 }
 
 .splash-overlay.hidden {
     opacity: 0;
-    visibility: hidden;
+    backdrop-filter: blur(4px);
     pointer-events: none;
 }
 
 .splash-content {
-    position: relative;
-    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    transform: translateY(-80px);
+    transform: translateY(-60px);
 }
 
 .splash-title {
-    font-size: 56px;
+    font-size: 52px;
     font-weight: 800;
-    letter-spacing: 3px;
+    letter-spacing: 4px;
     user-select: none;
     color: var(--accent);
 }
@@ -1527,83 +1756,178 @@ body.theme-bw {
 /* ---- Animation 1: Glide ---- */
 
 .splash-glide .splash-content {
-    animation: glideContent 2.4s ease-in-out forwards;
+    animation: glideAnim 1.6s ease-out forwards;
 }
 
 .splash-glide .splash-title {
-    animation: glideText 2.4s ease-in-out forwards;
     text-shadow: 0 0 30px var(--accent-glow);
 }
 
-@keyframes glideContent {
-    0%   { transform: translateY(-80px); }
-    15%  { transform: translateY(-40px); }
-    50%  { transform: translateY(0); }
-    85%  { transform: translateY(30px); opacity: 1; }
-    100% { transform: translateY(60px); opacity: 0; }
-}
-
-@keyframes glideText {
-    0%   { opacity: 0; }
-    20%  { opacity: 1; }
-    60%  { opacity: 1; }
-    100% { opacity: 0; }
+@keyframes glideAnim {
+    0%   { transform: translateY(-80px); opacity: 0; }
+    25%  { transform: translateY(-20px); opacity: 1; }
+    60%  { transform: translateY(5px); opacity: 1; }
+    85%  { transform: translateY(0px); opacity: 1; }
+    100% { transform: translateY(0px); opacity: 1; }
 }
 
 /* ---- Animation 2: Pulse Drop ---- */
 
 .splash-pulse .splash-content {
-    animation: pulseContent 2.4s ease-in-out forwards;
+    animation: pulseAnim 1.6s ease-out forwards;
 }
 
 .splash-pulse .splash-title {
-    animation: pulseText 2.4s ease-in-out forwards;
     text-shadow: 0 0 20px var(--accent-glow);
+    animation: pulseGlow 1.6s ease-out forwards;
 }
 
-@keyframes pulseContent {
-    0%   { transform: translateY(-100px); }
-    10%  { transform: translateY(-40px); }
-    30%  { transform: translateY(-45px); }
-    50%  { transform: translateY(-30px); }
-    75%  { transform: translateY(20px); opacity: 1; }
-    100% { transform: translateY(60px); opacity: 0; }
+@keyframes pulseAnim {
+    0%   { transform: translateY(-80px); opacity: 0; }
+    20%  { transform: translateY(-20px); opacity: 1; }
+    50%  { transform: translateY(-5px); }
+    75%  { transform: translateY(0px); opacity: 1; }
+    100% { transform: translateY(0px); opacity: 1; }
 }
 
-@keyframes pulseText {
-    0%   { opacity: 0; filter: blur(8px); }
-    20%  { opacity: 1; filter: blur(0); }
-    30%  { text-shadow: 0 0 40px var(--accent-glow), 0 0 80px var(--accent-glow); }
-    50%  { text-shadow: 0 0 20px var(--accent-glow), 0 0 40px var(--accent-glow); }
-    75%  { opacity: 1; }
-    100% { opacity: 0; filter: blur(4px); }
+@keyframes pulseGlow {
+    0%   { filter: blur(8px); }
+    25%  { filter: blur(0); text-shadow: 0 0 50px var(--accent-glow), 0 0 100px var(--accent-glow); }
+    55%  { text-shadow: 0 0 25px var(--accent-glow); }
+    85%  { text-shadow: 0 0 10px var(--accent-glow); }
+    100% { filter: blur(0); text-shadow: 0 0 5px var(--accent-glow); }
 }
 
 /* ---- Animation 3: Rotate Slide ---- */
 
 .splash-rotate .splash-content {
-    animation: rotateContent 2.4s ease-in-out forwards;
+    animation: rotateAnim 1.6s ease-out forwards;
 }
 
 .splash-rotate .splash-title {
-    animation: rotateText 2.4s ease-in-out forwards;
     text-shadow: 0 0 25px var(--accent-glow);
 }
 
-@keyframes rotateContent {
-    0%   { transform: translateY(-70px) rotate(-5deg); }
-    20%  { transform: translateY(-30px) rotate(3deg); }
-    50%  { transform: translateY(0) rotate(0deg); }
-    80%  { transform: translateY(30px) rotate(2deg); opacity: 1; }
-    100% { transform: translateY(60px) rotate(5deg); opacity: 0; }
+@keyframes rotateAnim {
+    0%   { transform: translateY(-60px) rotate(-8deg); opacity: 0; }
+    25%  { transform: translateY(-15px) rotate(3deg); opacity: 1; }
+    60%  { transform: translateY(5px) rotate(0deg); opacity: 1; }
+    85%  { transform: translateY(0px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(0px) rotate(0deg); opacity: 1; }
 }
 
-@keyframes rotateText {
-    0%   { opacity: 0; }
-    20%  { opacity: 1; }
-    65%  { opacity: 1; }
-    100% { opacity: 0; }
+/* Agent checker */
+.agent-check-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
 }
+
+.agent-check-row .sidebar-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.agent-check-row .sidebar-btn {
+    width: auto;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.agent-result {
+    font-size: 13px;
+    padding: 6px 0;
+    min-height: 20px;
+}
+
+.agent-result.free { color: var(--success); }
+.agent-result.paid { color: #ffa502; }
+.agent-result.mixed { color: var(--accent); }
+.agent-result.unknown { color: var(--text-secondary); }
+.agent-result.error { color: var(--danger); }
+
+.saved-agents-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 140px;
+    overflow-y: auto;
+    margin-top: 8px;
+}
+
+.agent-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.03);
+    border-radius: var(--radius-sm);
+    gap: 6px;
+}
+
+.agent-item-name {
+    font-size: 11px;
+    color: var(--text-primary);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-remove-btn {
+    padding: 2px 8px;
+    font-size: 10px;
+    background: transparent;
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-sm);
+    color: var(--danger);
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.agent-remove-btn:hover {
+    background: rgba(255,71,87,0.15);
+}
+
+/* Branch cards */
+.branch-wrapper {
+    margin: 8px 0;
+}
+.branch-heading {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+}
+.branch-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.branch-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--card-bg);
+}
+.branch-card:hover {
+    border-color: var(--accent);
+    background: var(--hover-bg);
+}
+.branch-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+}
+.branch-text {
+    font-size: 14px;
+    line-height: 1.5;
+}
+.branch-text p { margin: 4px 0; }
 
 /* Update banner */
 .update-banner {

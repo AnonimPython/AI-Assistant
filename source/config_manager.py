@@ -30,57 +30,97 @@ if os.path.isdir(_OLD_DATA) and not os.path.isdir(_APP_DATA):
 #? OpenRouter models list — free tier models
 #? Список моделей OpenRouter — бесплатные модели
 MODELS_OR = [
+    {"provider": "openrouter", "id": "inclusionai/ling-3.0-tiny:free", "name": "Ling 3.0 Tiny"},
+    {"provider": "openrouter", "id": "poolside/laguna-s-2.1:free", "name": "Laguna S 2.1"},
     {"provider": "openrouter", "id": "poolside/laguna-xs-2.1:free", "name": "Laguna XS 2.1"},
-    {"provider": "openrouter", "id": "cohere/north-mini-code:free",      "name": "North Mini Code"},
-    {"provider": "openrouter", "id": "qwen/qwen3-next-80b-a3b-instruct:free", "name": "Qwen3 Next 80B"},
-    {"provider": "openrouter", "id": "google/gemma-4-31b-it:free",   "name": "Gemma 4 31B"},
-    {"provider": "openrouter",   "id": "nousresearch/hermes-3-llama-3.1-405b:free", "name": "Hermes 3 405B"},
+    {"provider": "openrouter", "id": "cohere/north-mini-code:free", "name": "North Mini Code"},
+    # {"provider": "openrouter", "id": "qwen/qwen3-next-80b-a3b-instruct:free", "name": "Qwen3 Next 80B"},  # broken
+    {"provider": "openrouter", "id": "google/gemma-4-31b-it:free", "name": "Gemma 4 31B"},
+    # {"provider": "openrouter", "id": "nousresearch/hermes-3-llama-3.1-405b:free", "name": "Hermes 3 405B"},  # broken
 ]
 
-#? HuggingFace models list — various providers
+#? HuggingFace models list — various providers / все не работают
 #? Список моделей HuggingFace — различные провайдеры
 MODELS_HF = [
-    {"provider": "huggingface",  "id": "deepseek-ai/DeepSeek-V4-Flash:novita", "name": "DeepSeek V4 Flash"},
-    {"provider": "huggingface", "id": "google/gemma-4-31B-it:novita",       "name": "Gemma 4 31B Novita"},
-    {"provider": "huggingface", "id": "zai-org/GLM-5.2:novita",         "name": "GLM 5.2 Novita"},
-    {"provider":   "huggingface", "id": "WeiboAI/VibeThinker-3B:featherless-ai", "name": "VibeThinker 3B"},
-    {"provider": "huggingface", "id": "openai/gpt-oss-20b:groq",     "name": "GPT OSS 20B Groq"},
-    {"provider": "huggingface",  "id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0:featherless-ai", "name": "TinyLlama 1.1B Chat"},
-    {"provider": "huggingface", "id": "microsoft/Phi-4-mini-instruct:featherless-ai", "name": "Phi 4 Mini Instruct"},
-    {"provider": "huggingface", "id": "dphn/Dolphin-Mistral-24B-Venice-Edition:featherless-ai", "name": "Dolphin Mistral 24B Venice"},
-    {"provider":"huggingface", "id": "jinaai/ReaderLM-v2:featherless-ai", "name": "ReaderLM v2"},
-    {"provider": "huggingface", "id": "Jackrong/Qwopus3.6-27B-Coder:featherless-ai", "name": "Qwopus 3.6 27B Coder"},
-    {"provider": "huggingface", "id": "anthracite-org/magnum-v4-72b:featherless-ai",    "name": "Magnum V4 72B"},
-    {"provider": "huggingface", "id": "huihui-ai/Huihui-Qwen3-4B-Instruct-2507-abliterated:featherless-ai", "name": "Huihui Qwen3 4B"},
-    {"provider": "huggingface", "id": "deepreinforce-ai/Ornith-1.0-35B:deepinfra", "name": "Ornith 1.0 35B"},
+    # {"provider": "huggingface", "id": "deepseek-ai/DeepSeek-V4-Flash:novita", "name": "DeepSeek V4 Flash"},  # broken
+    # {"provider": "huggingface", "id": "google/gemma-4-31B-it:novita", "name": "Gemma 4 31B Novita"},  # broken
+    # {"provider": "huggingface", "id": "zai-org/GLM-5.2:novita", "name": "GLM 5.2 Novita"},  # broken
+    # {"provider": "huggingface", "id": "WeiboAI/VibeThinker-3B:featherless-ai", "name": "VibeThinker 3B"},  # broken
+    # {"provider": "huggingface", "id": "openai/gpt-oss-20b:groq", "name": "GPT OSS 20B Groq"},  # broken
+    # {"provider": "huggingface", "id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0:featherless-ai", "name": "TinyLlama 1.1B Chat"},  # broken
+    # {"provider": "huggingface", "id": "microsoft/Phi-4-mini-instruct:featherless-ai", "name": "Phi 4 Mini Instruct"},  # broken
+    # {"provider": "huggingface", "id": "dphn/Dolphin-Mistral-24B-Venice-Edition:featherless-ai", "name": "Dolphin Mistral 24B Venice"},  # broken
+    # {"provider": "huggingface", "id": "jinaai/ReaderLM-v2:featherless-ai", "name": "ReaderLM v2"},  # broken
+    # {"provider": "huggingface", "id": "Jackrong/Qwopus3.6-27B-Coder:featherless-ai", "name": "Qwopus 3.6 27B Coder"},  # broken
+    # {"provider": "huggingface", "id": "anthracite-org/magnum-v4-72b:featherless-ai", "name": "Magnum V4 72B"},  # broken
+    # {"provider": "huggingface", "id": "huihui-ai/Huihui-Qwen3-4B-Instruct-2507-abliterated:featherless-ai", "name": "Huihui Qwen3 4B"},  # broken
+    # {"provider": "huggingface", "id": "deepreinforce-ai/Ornith-1.0-35B:deepinfra", "name": "Ornith 1.0 35B"},  # broken
 ]
 
 #* Fish Audio TTS voices — (display_name, reference_id)
 #* Голоса Fish Audio TTS — (отображаемое_имя, идентификатор)
 VOICES = [
-    ("Shinobu (RU) — female", "a96ec9e0b4b54d92988b4eff8a0097c6"),
-    ("Gojo Satoru (RU) — male", "c13bf4a09d6b4eec8faf90e4e71782d1"),
+    ("Shinobu — female (RU)", "a96ec9e0b4b54d92988b4eff8a0097c6"),
+    ("Gojo Satoru — male (RU)", "c13bf4a09d6b4eec8faf90e4e71782d1"),
     ("Mita (MiSide) — female (RU)", "6dc11f3f67a543f6ad4537a4a347e224"),
-    ("Cap Mita (MiSide)", "ff1ae409865e4c7493db061913d77a79"),
-    ("GLaDOS (Portal) RU — female", "7dcc373dd62f44e490072a73a0b73dc4"),
-    ("Johnny Silverhand (v2) — male", "aded77ddefce489abf1f0f0e07b9cb12"),
-    ("Johnny Silverhand — male", "7ada5bb3bc644efab8ba08a377dc9ec4"),
-    ("Anton Chigur (Kriger) — male", "132720cd273840b1a3af569f91b2ea3f"),
-    ("Homelander (The Boys) — male", "10f399ed80e64739bb0e713416a66d6e"),
-    ("Ayanokoji (RU) — male", "b2716eb8c3a14df0bbb4ae5ca4d9d70a"),
-    ("Peter Griffin — male", "946536221be74fd68580abac0fa2bf4f"),
-    ("Dominic Toretto — male", "46a15e20b8434d1a80c45adf2408dac2"),
-    ("Marin Kitagawa — female", "1db1618b6eaf4571ac7db70e20eb6727"),
-    ("Jarvis — male", "3fc339d7c6474b11a221708e2a7b1c4b"),
-    ("Wassup ma boy — male", "4427e53290a04fbca0ec0b2be9487243"),
-    ("Morpheus (Matrix) — male", "e43f5f43e2df470a855dad3e0f2f369b"),
-    ("Statham (RU dub) — male", "2074ed007f0940618f98dd4f9f8ec1f7"),
+    ("Cap Mita (MiSide) (RU)", "ff1ae409865e4c7493db061913d77a79"),
+    ("GLaDOS (Portal) RU — female (RU)", "7dcc373dd62f44e490072a73a0b73dc4"),
+    ("Johnny Silverhand (v2) — male (RU)", "aded77ddefce489abf1f0f0e07b9cb12"),
+    ("Johnny Silverhand — male (RU)", "7ada5bb3bc644efab8ba08a377dc9ec4"),
+    ("Anton Chigur (Kriger) — male (RU)", "132720cd273840b1a3af569f91b2ea3f"),
+    ("Homelander (The Boys) — male (RU)", "10f399ed80e64739bb0e713416a66d6e"),
+    ("Ayanokoji — male (RU)", "b2716eb8c3a14df0bbb4ae5ca4d9d70a"),
+    ("Peter Griffin — male (RU)", "946536221be74fd68580abac0fa2bf4f"),
+    ("Dominic Toretto — male (RU)", "46a15e20b8434d1a80c45adf2408dac2"),
+    ("Marin Kitagawa — female (RU)", "1db1618b6eaf4571ac7db70e20eb6727"),
+    ("Jarvis — male (RU)", "3fc339d7c6474b11a221708e2a7b1c4b"),
+    ("Wassup ma boy — male (RU)", "4427e53290a04fbca0ec0b2be9487243"),
+    ("Morpheus (Matrix) — male (RU)", "e43f5f43e2df470a855dad3e0f2f369b"),
+    ("Statham (RU dub) — male (RU)", "2074ed007f0940618f98dd4f9f8ec1f7"),
+    ("Рудо — male (RU)", "ae0872ceeba04fe38fed1099fd2b3c0f"),
+    ("Мэвис (Отель Монстров) — female (RU)", "02f8eff6783c4fe59a849cc439f250e9"),
+    ("Мориарти — male (RU)", "b4b3cd5e89cc4fb682301b43e627d5ef"),
+    ("Рик Санчез — male (RU)", "cb92b10e1a5946b9b6bd7391aefe31fe"),
+    ("Леон Кенеди — male (RU)", "76df85f264884c3f82cee493c96b7b77"),
+    ("Девушка Ru — female (RU)", "287a9a01a5d241a6bccf43f199a89109"),
+    ("Эрими Мушибами (Безумный азарт) (RU)", "de7f0dfc640849aca3658ee0b088e628"),
+    ("Кубик в кубе (RU)", "2b932e13e5564601a6f5c705cecf36fe"),
+    ("Компот (Три кота) (RU)", "ca3728544b0b4964870016337f32c720"),
+    ("Брэд Пит «Кузнецов» (RU)", "d9247a00779649adbe7f4fdde2ac11c8"),
+    ("Билли Бутчер (RU)", "7be18a8fb05a4f50813d1b7abb055849"),
+    ("Ягами Лайт (RU)", "9a2eb495e00c44e480478fc7d6b0eae6"),
+    ("Нацуки (Литературный клуб) (RU)", "a8bccf8232f34efba053420030d1bd7a"),
+    ("Крош (Смешарики) (RU)", "03863e67737a471181486599d21f4673"),
+    ("Девушка Няшка (RU)", "ad6bf3e5383f4319a10b37eca0f57c6b"),
+    ("Девушка Няшка 2 (RU)", "3764a6a096d14408af1d49b13633c218"),
+    ("Гёкоё (фармацевт) (RU)", "9603781991bc48a098c581227351e96e"),
+    ("Яндекс Алиса (RU)", "a8c977dc83f6470ab9e1956cac24d000"),
+    ("L (Тетрадь смерти) (RU)", "c82093447f0a44d6b60ee3f23987f2a5"),
+    ("Сукуна (RU)", "b90eb1c64fe14c99a614055e7b8bbad6"),
+    ("Том Холанд (RU)", "938daa27e39f4ddb9623bf028f4e5eb8"),
+    ("Мориарти 2 (RU)", "05ef6fb39281452baf7c62e0ae4fdd95"),
+    ("T2x2 (RU)", "de4c390a7e044706874e9a19c5f1b7cc"),
+    ("Девушка Няшка 3 (RU)", "0324978b24744588ae5a79b5b8a30466"),
+    ("Макима (RU)", "eee040cb2e524e6083df058c34ec6377"),
+    ("Сукуна 2 (RU)", "ea6ac651326445899ae1acaa810f523e"),
 ]
 
 
 #* Default system prompt — instructs the AI to respond in Russian
 #* Системный промпт по умолчанию — указывает ИИ отвечать на русском
-SYSTEM_PROMPT = "You are a helpful assistant. Always respond in Russian."
+SYSTEM_PROMPT = (
+    "You are a highly capable, multilingual AI assistant. "
+    "Always respond in clear, natural Russian (unless the user writes in another language, then match their language). "
+    "Formatting rules:\n"
+    "- Do NOT use markdown tables (no |---| or | cells). Use plain lists or short paragraphs instead.\n"
+    "- Do NOT use headings (no #, ##, ###, etc.). Use **bold** for emphasis if needed.\n"
+    "- Use bullet points (* or -) for lists, not numbered lists unless order matters.\n"
+    "- Keep responses well-structured with short paragraphs separated by blank lines.\n"
+    "- Be concise but thorough. Answer the user's question directly.\n"
+    "- If you need to show data, use simple indented lines or bullet points, never tables."
+)
+
+
 
 
 
@@ -210,9 +250,44 @@ class ConfigManager:
 
 
     def get_models(self):
-        #* Returns combined list of all models (OpenRouter + HuggingFace)
-        #* Возвращает объединённый список всех моделей
-        return MODELS_OR + MODELS_HF
+        #* Returns combined list of all models (OpenRouter + custom + HuggingFace)
+        #* Возвращает объединённый список всех моделей (OpenRouter + кастомные + HuggingFace)
+        custom = self.get_custom_models()
+        return MODELS_OR + custom + MODELS_HF
+
+
+    def get_custom_models(self):
+        #* Returns user-added custom OpenRouter models from config
+        #* Возвращает кастомные модели OpenRouter, добавленные пользователем
+        return self._data.get("custom_models", [])
+
+
+    def add_custom_model(self, model_id):
+        #* Adds a model ID to the custom models list and persists
+        #* Добавляет ID модели в список кастомных моделей и сохраняет
+        models = self.get_custom_models()
+        #* Avoid duplicates / Избегаем дубликатов
+        if any(m["id"] == model_id for m in models):
+            return False
+        #* Extract display name: last segment after / or : — e.g. "hy3:free" from "tencent/hy3:free"
+        #* Извлекаем отображаемое имя: последний сегмент после / или : — например "hy3:free" из "tencent/hy3:free"
+        display = model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id
+        models.append({
+            "provider": "openrouter",
+            "id": model_id,
+            "name": display,
+        })
+        self._data["custom_models"] = models
+        self._save_config()
+        return True
+
+
+    def remove_custom_model(self, model_id):
+        #* Removes a model ID from the custom models list and persists
+        #* Удаляет ID модели из списка кастомных моделей и сохраняет
+        models = self.get_custom_models()
+        self._data["custom_models"] = [m for m in models if m["id"] != model_id]
+        self._save_config()
 
 
     def get_voices(self):
@@ -277,8 +352,6 @@ class ConfigManager:
     #* Deletes a user-added voice by its ID
     #* Удаляет добавленный пользователем голос по ID
     def remove_custom_voice(self, voice_id):
-        #! Deletes a user-added voice by its ID
-        #! Удаляет добавленный пользователем голос по ID
         voices = self.get_custom_voices()
         voices = [v for v in voices if v[1] != voice_id]
         self.ensure_dir()
@@ -377,8 +450,6 @@ class ConfigManager:
     #! Deletes all chat history
     #! Удаляет всю историю чата
     def clear_history(self):
-        #! Deletes all chat history
-        #! Удаляет всю историю чата
         if os.path.exists(HISTORY_FILE):
             os.remove(HISTORY_FILE)
 
@@ -387,8 +458,6 @@ class ConfigManager:
     #! WARNING: Deletes the config file and resets all settings
     #! ВНИМАНИЕ: Удаляет файл конфигурации и сбрасывает все настройки
     def reset(self):
-        #! WARNING: Deletes the config file and resets all settings
-        #! ВНИМАНИЕ: Удаляет файл конфигурации и сбрасывает все настройки
         if os.path.exists(CONFIG_FILE):
             os.remove(CONFIG_FILE)
         self._data = {}
