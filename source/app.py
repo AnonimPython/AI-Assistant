@@ -1225,6 +1225,62 @@ def api_chat_branch():
     return jsonify({"branches": results})
 
 
+#* Hand Assistant — control the OS mouse with hand gestures via MediaPipe
+#* Hand Assistant — управление системной мышью жестами руки через MediaPipe
+#! Security: only local clients may control the mouse
+#! Безопасность: только локальные клиенты могут управлять мышью
+def _is_local():
+    return request.remote_addr in ("127.0.0.1", "::1", "localhost")
+
+
+@app.route("/api/hand/status", methods=["GET"])
+def api_hand_status():
+    try:
+        import pyautogui
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+
+
+@app.route("/api/hand/mouse", methods=["POST"])
+def api_hand_mouse():
+    if not _is_local():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+    action = data.get("action", "move")
+
+    try:
+        import pyautogui
+    except Exception:
+        return jsonify({"ok": False, "error": "pyautogui is not installed"}), 500
+
+    try:
+        pyautogui.FAILSAFE = False
+        if action == "move":
+            x, y = data.get("x"), data.get("y")
+            if x is None or y is None:
+                return jsonify({"ok": False, "error": "missing coords"}), 400
+            sw, sh = pyautogui.size()
+            px = max(0.0, min(1.0, float(x))) * sw
+            ty = max(0.0, min(1.0, float(y))) * sh
+            pyautogui.moveTo(px, ty, duration=0.0)
+        elif action == "left":
+            pyautogui.click(button="left")
+        elif action == "right":
+            pyautogui.click(button="right")
+        elif action == "down":
+            pyautogui.mouseDown(button="left")
+        elif action == "up":
+            pyautogui.mouseUp(button="left")
+        else:
+            return jsonify({"ok": False, "error": f"unknown action: {action}"}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    return jsonify({"ok": True})
+
+
 if __name__ == "__main__":
 
     port  = int(os.environ.get("PORT", 5066))

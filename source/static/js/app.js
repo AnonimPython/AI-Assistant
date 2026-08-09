@@ -1546,3 +1546,436 @@ function stripMarkdown(text) {
         .replace(/\s+/g, " ")
         .trim();
 }
+
+
+//* Hand Assistant — control the OS mouse via MediaPipe hand tracking
+//* Hand Assistant — управление мышью жестами руки через MediaPipe
+//* ============================================================
+//* Gestures / Жесты:
+//*   open hand → move cursor / открытая ладонь → движение курсора
+//*   thumb bent (folded) → press left button / согнутый большой палец → нажать ЛКМ
+//*   thumb held bent → hold left button (drag) / держим палец согнутым → ЛКМ зажата
+//*   thumb released → release left button / разогнул палец → отпустить ЛКМ
+//* ============================================================
+
+const handToggle = document.getElementById("hand-toggle");
+const handPanel = document.getElementById("hand-panel");
+const handVideo = document.getElementById("hand-video");
+const handPanelStatus = document.getElementById("hand-panel-status");
+const handMsg = document.getElementById("hand-msg");
+
+let handStream = null;
+let handLandmarker = null;
+let handActive = false;
+let handSizeCanvas = null;
+
+//* Local bundled MediaPipe (no CDN needed) / Локальные файлы MediaPipe (без CDN)
+const HAND_WASM = "/static/js/mediapipe/wasm";
+const HAND_MODEL = "/static/js/mediapipe/hand_landmarker.task";
+const HAND_BUNDLE = "/static/js/mediapipe/vision_bundle.mjs";
+
+function handMsgSet(text, type) {
+    if (handMsg) {
+        handMsg.textContent = text;
+        handMsg.className = "hand-msg" + (type ? " " + type : "");
+    }
+    if (handPanelStatus) handPanelStatus.textContent = text;
+    if (text) console.log("[hand]", type, text);
+}
+
+function dist2(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+async function loadHandLandmarker() {
+    if (handLandmarker) return handLandmarker;
+    //* Load the MediaPipe bundle once via dynamic import / Загружаем бандл один раз через динамический импорт
+    if (!window.__mediapipeBundle) {
+        window.__mediapipeBundle = await import(HAND_BUNDLE);
+    }
+    const vision = await window.__mediapipeBundle.FilesetResolver.forVisionTasks(HAND_WASM);
+    //* Try GPU first, fall back to CPU (some WebViews don't support WebGL)
+    //* Сначала пробуем GPU, при неудаче переходим на CPU
+    const make = (delegate) => window.__mediapipeBundle.HandLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: HAND_MODEL, delegate },
+        runningMode: "VIDEO",
+        numHands: 2,
+    });
+    try {
+        handLandmarker = await make("GPU");
+    } catch (e) {
+        console.warn("[hand] GPU delegate failed, using CPU:", e);
+        handLandmarker = await make("CPU");
+    }
+    return handLandmarker;
+}
+
+async function startHandAssistant() {
+    handMsgSet(t.hand_init || "Initializing camera...", "");
+    try {
+        await loadHandLandmarker();
+    } catch (e) {
+        handToggle.checked = false;
+        handMsgSet(t.hand_mediapipe_error || "Hand tracking library failed to load. Check your internet connection.", "error");
+        return;
+    }
+    try {
+        handStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+            audio: false,
+        });
+    } catch (e) {
+        handToggle.checked = false;
+        handMsgSet(t.hand_camera_error || "Camera access denied or unavailable. Allow camera access and try again.", "error");
+        return;
+    }
+    handVideo.srcObject = handStream;
+    handPanel.style.display = "block";
+    handActive = true;
+    handMsgSet(t.hand_ready || "Hand Assistant is active.", "success");
+    //* Match the overlay canvas to the actual video resolution / Подгоняем канвас под разрешение видео
+    const cv = document.getElementById("hand-canvas");
+    handSizeCanvas = () => {
+        if (cv && handVideo.videoWidth) {
+            cv.width = handVideo.videoWidth;
+            cv.height = handVideo.videoHeight;
+        }
+    };
+    handSizeCanvas();
+    handVideo.addEventListener("loadedmetadata", handSizeCanvas);
+    startHandLoop();
+    handVideo.play().catch(() => {});
+}
+
+function stopHandAssistant() {
+    handActive = false;
+    stopHandLoop();
+    if (handStream) {
+        handStream.getTracks().forEach((tr) => tr.stop());
+        handStream = null;
+    }
+    if (handVideo) {
+        handVideo.srcObject = null;
+        if (handSizeCanvas) handVideo.removeEventListener("loadedmetadata", handSizeCanvas);
+    }
+    if (handPanel) handPanel.style.display = "none";
+    if (handToggle) handToggle.checked = false;
+    const cv = document.getElementById("hand-canvas");
+    if (cv) cv.getContext("2d").clearRect(0, 0, cv.width, cv.height);
+    thumbDown = false;
+    thumbDownFrames = thumbUpFrames = 0;
+}
+
+//* Send a mouse command to the local Flask server (OS-level control)
+//* Отправляем команду мыши на локальный Flask-сервер (управление на уровне ОС)
+function sendHand(action, payload) {
+    fetch("/api/hand/mouse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({ action }, payload || {})),
+    }).catch(() => {});
+}
+
+//* Gesture state / Состояние жестов
+let handSmoothX = 0.5, handSmoothY = 0.5;
+let lastSentX = 0.5, lastSentY = 0.5;
+let handHasControl = false, handGoneFrames = 0;
+let thumbDown = false;               // LMB currently held / ЛКМ зажата сейчас
+let thumbDownFrames = 0, thumbUpFrames = 0;
+let lastMoveSent = 0;
+let lastTickAt = 0;                  // timestamp of the previous detection tick
+let handTimerId = null;
+
+const HAND_LOOP_MS = 33;            // ~30 fps detection / ~30 кадров/с
+const HAND_SMOOTH = 0.2;            // cursor low-pass per 33 ms (lower = smoother)
+const HAND_DEADZONE = 0.0012;       // normalized dead zone before sending a move
+const HAND_THUMB_FACTOR = 1.15;     // thumb counts as folded when tip is this close to wrist
+const HAND_GUARD_FRAMES = 2;        // consecutive frames needed to press/release LMB
+
+//* ============================================================
+//* HAND SKELETON RENDERER (fully custom, NOT Google's DrawingUtils)
+//* ОТРИСОВКА СКЕЛЕТА РУКИ (полностью своя, НЕ гугловский DrawingUtils)
+//* ============================================================
+//* WHY CUSTOM: Google's MediaPipe ships DrawingUtils.drawLandmarks /
+//* drawConnectors helpers. We deliberately DON'T use them here and instead
+//* draw every dot and line ourselves with the raw Canvas 2D API. This gives
+//* us full control over styling (colors, glow, sizes), zero extra imports,
+//* and a lightweight, transparent renderer.
+//* ЗАЧЕМ СВОЙ: в MediaPipe есть готовые хелперы DrawingUtils для точек и
+//* линий. Здесь мы СОЗНАТЕЛЬНО их не используем и рисуем каждую точку и
+//* линию сами через низкоуровневый Canvas 2D API. Так мы полностью
+//* контролируем стиль (цвета, свечение, размеры), не тянем лишний код и
+//* получаем прозрачный и лёгкий рендер.
+//*
+//* THE DATA — HOW LANDMARKS WORK / ДАННЫЕ — КАК УСТРОЕНЫ ЛАНДМАРКИ:
+//* ------------------------------------------------------------------
+//* MediaPipe's hand landmarker returns 21 landmarks per hand. Each
+//* landmark is a point with normalized coordinates: x and y are floats
+//* from 0.0 to 1.0 (0,0 = top-left corner of the VIDEO FRAME, 1,1 =
+//* bottom-right). z is depth. "Normalized" means the numbers do NOT depend
+//* on camera resolution — 0.5 is always the horizontal middle.
+//* Модель MediaPipe возвращает 21 ландмарк на руку. Каждый ландмарк —
+//* точка с нормализованными координатами: x и y — числа от 0.0 до 1.0
+//* (0,0 = левый верхний угол КАДРА ВИДЕО, 1,1 = правый нижний). z — глубина.
+//* «Нормализованные» значит числа не зависят от разрешения камеры —
+//* 0.5 это всегда горизонтальная середина.
+//*
+//* LANDMARK INDEXES (standard MediaPipe hand skeleton) / ИНДЕКСЫ ТОЧЕК:
+//* ------------------------------------------------------------------
+//*   0  = wrist / запястье
+//*   1,2,3,4   = thumb   (CMC, MCP, IP, TIP)   большой палец
+//*   5,6,7,8   = index   (MCP, PIP, DIP, TIP)  указательный
+//*   9,10,11,12= middle  (MCP, PIP, DIP, TIP)  средний
+//*   13,14,15,16 = ring   (MCP, PIP, DIP, TIP) безымянный
+//*   17,18,19,20= pinky  (MCP, PIP, DIP, TIP)  мизинец
+//*
+//* HAND_BONES — the skeleton connections below are the list of (indexA,
+//* indexB) pairs that link adjacent joints into bones. It's a plain
+//* hard-coded table (the same topology Google's HAND_CONNECTIONS uses,
+//* but written out here as our own data so the renderer is self-contained).
+//* HAND_BONES — пары индексов (A, B), которые соединяют соседние суставы
+//* в «кости». Это обычная захардкоженная таблица (та же топология, что и
+//* в гугловском HAND_CONNECTIONS, но выписана здесь как наши собственные
+//* данные, чтобы рендер был полностью автономным).
+const HAND_BONES = [
+    //* Thumb: wrist→CMC→MCP→IP→TIP / Большой: запястье→CMC→MCP→IP→кончик
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    //* Index: MCP→PIP→DIP→TIP / Указательный
+    [5, 6], [6, 7], [7, 8],
+    //* Middle: MCP→PIP→DIP→TIP / Средний
+    [9, 10], [10, 11], [11, 12],
+    //* Ring: MCP→PIP→DIP→TIP / Безымянный
+    [13, 14], [14, 15], [15, 16],
+    //* Pinky: MCP→PIP→DIP→TIP / Мизинец
+    [17, 18], [18, 19], [19, 20],
+    //* Palm: wrist connects to each finger's base knuckle / Ладонь:
+    //* запястье связано с основаниями всех пальцев
+    [0, 5], [0, 17], [5, 9], [9, 13], [13, 17],
+];
+
+//* Landmark indexes that are finger TIPS — drawn bigger & golden / Точки
+//* на кончиках пальцев — рисуем крупнее и золотистым цветом
+const HAND_TIPS = new Set([4, 8, 12, 16, 20]);
+
+//* Renders all detected hands on top of the mirrored preview video.
+//* Рисует все найденные руки поверх зеркального предпросмотра видео.
+function drawHands(res) {
+    const cv = document.getElementById("hand-canvas");
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+
+    //* 1) WIPE / ОЧИСТКА: erase the dots from the previous frame so we
+    //* start from a blank canvas each time. Canvas 2D has no auto-clear,
+    //* so we do it manually over the full pixel area.
+    //* Стираем точки прошлого кадра, чтобы начинать с чистого листа.
+    ctx.clearRect(0, 0, cv.width, cv.height);
+
+    //* Nothing to draw — leave the canvas blank / Нечего рисовать — пусто.
+    if (!res || !res.landmarks || !res.landmarks.length) return;
+
+    //* 2) UNIT SCALING / МАСШТАБ: the canvas pixel size equals the raw
+    //* camera resolution (we set cv.width/height in startHandAssistant).
+    //* Landmarks are normalized 0..1, so each normalized unit spans the
+    //* whole canvas. We multiply x by width and y by height to land on
+    //* the exact pixel where the joint actually is in the frame.
+    //* Пиксельный размер канваса равен разрешению камеры (задаём в
+    //* startHandAssistant). Ландмарки нормализованы 0..1, значит каждая
+    //* единица растягивается на весь канвас. Умножаем x на ширину, y на
+    //* высоту — и попадаем точно в пиксель, где реально находится сустав.
+    const W = cv.width, H = cv.height;
+
+    //* Handled per detected hand (up to 2) / Обрабатываем каждую руку
+    //* (в кадре их может быть до двух).
+    for (const hand of res.landmarks) {
+        //* Convert normalized → pixels for all 21 points at once.
+        //* Конвертируем нормализованные координаты → пиксели для всех
+        //* 21 точки разом.
+        const pts = hand.map(p => ({ x: p.x * W, y: p.y * H }));
+
+        //* 3) BONES / «КОСТИ»: draw connecting lines UNDER the dots.
+        //* Line width scales with the camera resolution so the skeleton
+        //* looks the same on any webcam.
+        //* Рисуем соединительные линии ПОД точками. Толщина линии
+        //* масштабируется от разрешения камеры — скелет одинаков на любой
+        //* вебке.
+        ctx.lineJoin = "round";          // smooth bone joints / скруглённые стыки
+        ctx.lineCap  = "round";          // rounded bone ends / круглые концы
+        ctx.strokeStyle = "rgba(0, 255, 136, 0.85)";  // neon green / неоново-зелёный
+        ctx.lineWidth = Math.max(2, (W / 640) * 2);
+        for (const [a, b] of HAND_BONES) {
+            ctx.beginPath();
+            ctx.moveTo(pts[a].x, pts[a].y);   // bone start / начало «кости»
+            ctx.lineTo(pts[b].x, pts[b].y);   // bone end   / конец «кости»
+            ctx.stroke();
+        }
+
+        //* 4) JOINTS / СУСТАВЫ: glowing dots on top of the bones.
+        //* The "glow" is a radial feel created with shadowBlur — a soft
+        //* halo around each dot. Fingertips are golden and slightly bigger,
+        //* everything else is white. Wrist (index 0) is drawn largest.
+        //* Светящиеся точки поверх «костей». «Свечение» делаем через
+        //* shadowBlur — мягкий ореол вокруг точки. Кончики пальцев —
+        //* золотистые и крупнее, остальные — белые. Запястье (0) — самое
+        //* большое.
+        const baseR = Math.max(3, (W / 640) * 3);      // normal joint size
+        for (let i = 0; i < pts.length; i++) {
+            const isTip  = HAND_TIPS.has(i);           // fingertip? / это кончик?
+            const radius = isTip ? baseR * 1.3 : baseR; // tips a bit larger
+            ctx.beginPath();
+            ctx.arc(pts[i].x, pts[i].y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = isTip ? "#FFD54F" : "#FFFFFF";  // gold/white
+            ctx.shadowColor = isTip ? "#FFD54F" : "#00FF88"; // matching glow
+            ctx.shadowBlur = isTip ? 10 : 6;               // halo strength
+            ctx.fill();
+        }
+        //* Reset the glow so it never leaks into the next frame / Сбрасываем
+        //* свечение, чтобы оно не «протекало» в следующий кадр.
+        ctx.shadowBlur = 0;
+    }
+}
+
+function processHand(lm) {
+    //* TIME-ADAPTIVE SMOOTHING / СГЛАЖИВАНИЕ ПО ВРЕМЕНИ:
+    //* The low-pass factor HAND_SMOOTH is "per 33 ms tick". When the OS
+    //* minimizes the window it throttles our setInterval to a fraction of
+    //* the normal rate (e.g. once a second). With a fixed per-tick factor
+    //* the cursor would only creep a small step each time — the "slow
+    //* motion" effect. Fix: convert the factor to real time. We compute
+    //* how many "normal ticks" actually elapsed since the last frame and
+    //* raise alpha accordingly. Slow ticks → alpha→1 → the cursor catches
+    //* up instantly instead of lagging behind the hand.
+    //* Коэффициент HAND_SMOOTH задан «на тик 33 мс». Когда ОС сворачивает
+    //* окно, она тормозит наш setInterval в разы (например до раза в
+    //* секунду). При фиксированном коэффициенте курсор бы каждый раз
+    //* полз на крошечный шаг — эффект «слоумо». Решение: переводим
+    //* коэффициент в реальное время. Считаем, сколько «нормальных тиков»
+    //* прошло с прошлого кадра, и увеличиваем alpha. Медленный тик →
+    //* alpha→1 → курсор мгновенно догоняет руку вместо отставания.
+    const nowMs = performance.now();
+    const dt = Math.min((nowMs - lastTickAt) / HAND_LOOP_MS, 10);
+    lastTickAt = nowMs;
+    const alpha = 1 - Math.pow(1 - HAND_SMOOTH, dt);
+
+    //* Low-pass the cursor toward the index tip (mirrored for natural feel)
+    //* Сглаживаем курсор к кончику указательного (зеркалим для естественности)
+    handSmoothX += (1 - lm[8].x - handSmoothX) * alpha;
+    handSmoothY += (lm[8].y - handSmoothY) * alpha;
+
+    //* Send a move only when the smoothed position drifts past a dead zone.
+    //* Kills the micro-jitter that makes the cursor "shake".
+    //* Отправляем движение только когда сглаженная позиция ушла дальше
+    //* мёртвой зоны — это убирает дрожание курсора.
+    const now = Date.now();
+    const dx = handSmoothX - lastSentX, dy = handSmoothY - lastSentY;
+    if (now - lastMoveSent > 30 && (Math.abs(dx) > HAND_DEADZONE || Math.abs(dy) > HAND_DEADZONE)) {
+        lastMoveSent = now;
+        lastSentX = handSmoothX;
+        lastSentY = handSmoothY;
+        sendHand("move", { x: handSmoothX, y: handSmoothY });
+    }
+
+    //* LEFT MOUSE BUTTON — THUMB GESTURE / ЛЕВАЯ КНОПКА — ЖЕСТ БОЛЬШИМ ПАЛЬЦЕМ:
+    //* The thumb acts like a physical mouse button:
+    //*   - thumb folded toward the palm  → PRESS  LMB (mouseDown)
+    //*   - thumb straight / open         → RELEASE LMB (mouseUp)
+    //* A quick fold+open gives the OS a single click; holding the thumb
+    //* folded drags (hold & move). We guard both edges with N consecutive
+    //* frames so tracker noise around the fold boundary can't fire the
+    //* button accidentally.
+    //* Большой палец работает как физическая кнопка мыши:
+    //*   - палец согнут к ладони      → НАЖАТЬ ЛКМ (mouseDown)
+    //*   - палец разогнут / открыт    → ОТПУСТИТЬ ЛКМ (mouseUp)
+    //* Быстрый сгиб-разгиб даёт ОС одиночный клик; удержание пальца
+    //* согнутым = перетаскивание (зажать и вести). Обе границы
+    //* защищены N подряд идущими кадрами, чтобы шум трекера у границы
+    //* сгиба не нажимал кнопку случайно.
+    //* Thumb is "folded" when its tip (4) is as close to the wrist (0)
+    //* as its own MCP joint (2) — i.e. the thumb has collapsed across the
+    //* palm. / Палец «согнут», когда кончик (4) так же близок к запястью
+    //* (0), как и его основание (2) — то есть палец сложился к ладони.
+    const thumbBent = dist2(lm[4], lm[0]) < dist2(lm[2], lm[0]) * HAND_THUMB_FACTOR;
+
+    if (thumbBent) {
+        thumbDownFrames++;
+        thumbUpFrames = 0;
+    } else {
+        thumbUpFrames++;
+        thumbDownFrames = 0;
+    }
+
+    if (thumbDownFrames >= HAND_GUARD_FRAMES && !thumbDown) {
+        thumbDown = true;
+        sendHand("down");
+    }
+    if (thumbUpFrames >= HAND_GUARD_FRAMES && thumbDown) {
+        thumbDown = false;
+        sendHand("up");
+    }
+}
+
+//* Detection loop on setInterval instead of requestAnimationFrame:
+//* rAF is frozen when the window is minimized, setInterval keeps running,
+//* so hand tracking still works while the app is in the background.
+//* Цикл на setInterval вместо requestAnimationFrame: rAF замирает при свёрнутом
+//* окне, а setInterval продолжает работать, поэтому жесты работают и в фоне.
+function handTick() {
+    if (!handActive || !handLandmarker || !handVideo || handVideo.readyState < 2) return;
+    if (handVideo.paused) handVideo.play().catch(() => {});
+    const res = handLandmarker.detectForVideo(handVideo, performance.now());
+    drawHands(res);
+
+    //* Pick the closest hand (largest in frame) as the control hand
+    //* Берём самую близкую руку (самую крупную в кадре) как управляющую
+    let control = null, controlScale = 0;
+    for (const lm of (res.landmarks || [])) {
+        const s = dist2(lm[0], lm[9]) || 0;
+        if (s > controlScale) { controlScale = s; control = lm; }
+    }
+
+    if (!control) {
+        handGoneFrames++;
+        if (handGoneFrames > 15) {
+            if (thumbDown) { thumbDown = false; sendHand("up"); }
+            handHasControl = false;
+            thumbDownFrames = thumbUpFrames = 0;
+            lastSentX = handSmoothX; lastSentY = handSmoothY;
+        }
+    } else {
+        handGoneFrames = 0;
+        if (!handHasControl) {
+            handHasControl = true;
+            handSmoothX = 1 - control[8].x;
+            handSmoothY = control[8].y;
+            lastSentX = handSmoothX; lastSentY = handSmoothY;
+        }
+        processHand(control);
+    }
+}
+
+function startHandLoop() {
+    stopHandLoop();
+    lastTickAt = performance.now();   // baseline for time-adaptive smoothing
+    handTimerId = setInterval(handTick, HAND_LOOP_MS);
+}
+
+function stopHandLoop() {
+    if (handTimerId) { clearInterval(handTimerId); handTimerId = null; }
+}
+
+//* Restart the timer when the window becomes visible again in case
+//* the OS throttled it while minimized.
+//* Перезапускаем таймер при возврате окна на передний план, если
+//* ОС приостановила его в свёрнутом состоянии.
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && handActive) startHandLoop();
+});
+
+if (handToggle) {
+    handToggle.addEventListener("change", () => {
+        if (handToggle.checked) startHandAssistant();
+        else stopHandAssistant();
+    });
+}
+
+//* Always stop the camera when leaving the page / Останавливаем камеру при уходе со страницы
+window.addEventListener("beforeunload", stopHandAssistant);
