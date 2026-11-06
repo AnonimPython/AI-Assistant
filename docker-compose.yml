@@ -7,8 +7,9 @@ services:
     ports:
       - "5066:5066"
     volumes:
-      - ~/.ai_assistant:/root/.ai_assistant
+      - ~/.ai_assistant:/root/AI Assistant
     environment:
+      - HOST=0.0.0.0
       - PORT=5066
       - DEBUG=false
     restart: unless-stopped

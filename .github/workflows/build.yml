@@ -37,8 +37,8 @@ jobs:
       - name: Install Python deps
         run: |
           pip install --upgrade pip
-          pip install pyinstaller
-          pip install flask pywebview requests PyObjC
+          pip install pyinstaller PyObjC
+          pip install -r requirements.txt
 
       - name: Build .app
         run: |
@@ -55,6 +55,9 @@ jobs:
             --hidden-import webview \
             --hidden-import AppKit \
             --hidden-import Flask \
+            --hidden-import bs4 \
+            --hidden-import fitz \
+            --hidden-import docx \
             main.py
 
       - name: Package .dmg
@@ -90,7 +93,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pyinstaller
-          pip install flask requests
+          pip install -r requirements.txt
 
       - name: Build .exe (onedir)
         run: |
@@ -105,6 +108,9 @@ jobs:
             --add-data "source/translations.py;." `
             --add-data "source/config_manager.py;." `
             --hidden-import Flask `
+            --hidden-import bs4 `
+            --hidden-import fitz `
+            --hidden-import docx `
             --version-file version_info.txt `
             main.py
 

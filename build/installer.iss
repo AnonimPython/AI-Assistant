@@ -17,7 +17,7 @@
 ;*   - Минимум ложных срабатываний антивируса
 
 #define MyAppName "AI Assistant"
-#define MyAppVersion "1.0"
+#define MyAppVersion "2.0"
 #define MyAppPublisher "AnonimPython"
 #define MyAppURL "https://github.com/AnonimPython"
 #define MyAppExeName "AI Assistant.exe"

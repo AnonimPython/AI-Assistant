@@ -2,7 +2,7 @@
 
 Multi-model AI assistant with voice output. Works as a **web app** and **desktop app**.
 
-**App interface languages:** English, German, French, Serbian, Russian
+**App interface languages:** English, German, French, Portuguese, Russian
 
 ## Quick start
 
@@ -51,8 +51,9 @@ On first launch the app asks for 3 API keys:
 ## Features
 
 - **Multiple AI models**: OpenRouter + HuggingFace (13+ models)
+- **Free models browser**: add any free OpenRouter model with one click
 - **Voice output**: 17+ voices via Fish Audio TTS
-- **Multilingual UI**: 5 languages (EN, DE, FR, SR, RU)
+- **Multilingual UI**: 5 languages (EN, DE, FR, PT, RU)
 - **2 modes**:
   - Web -- launch and open in browser
   - Desktop -- native window (via pywebview)

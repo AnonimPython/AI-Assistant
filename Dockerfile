@@ -7,6 +7,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+ENV HOST=0.0.0.0
+ENV PORT=5066
+ENV DEBUG=false
+
 EXPOSE 5066
 
-CMD ["python", "app.py"]
+CMD ["python", "source/app.py"]
