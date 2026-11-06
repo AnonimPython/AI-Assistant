@@ -3,7 +3,7 @@
   Страница настройки — первоначальная конфигурация трёх API ключей
 -->
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{ lang }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,14 +11,37 @@
     <link rel="icon" type="image/png" href="/static/app_img/icon.png">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body class="setup-body">
+<body class="setup-body theme-{{ theme }}">
     <div class="setup-container">
         <div class="setup-card">
             <div class="setup-header">
-                <div class="setup-icon">*</div>
+                <div class="setup-orb"><span>✦</span></div>
                 <h1>Welcome!</h1>
-                <p class="setup-subtitle">Three API keys are required to get started</p>
+                <p class="setup-subtitle">Start with OpenRouter in one click — voice and HF keys are optional</p>
             </div>
+
+            {% if oauth_error %}
+            <div class="setup-alert">OpenRouter connection failed. Try again or paste your key manually.</div>
+            {% endif %}
+
+            <button type="button" id="oauth-start" class="setup-oauth-btn">
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                </svg>
+                <span>
+                    <strong>Continue with OpenRouter</strong>
+                    <small>1 click — no key copying, no setup</small>
+                </span>
+            </button>
+
+            <div class="setup-divider"><span>or set up manually</span></div>
+
+            <button type="button" id="open-all-keys" class="setup-allkeys-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                Open all 3 key pages
+            </button>
 
             <form id="setup-form" class="setup-form">
                 <div class="key-field">
@@ -36,8 +59,9 @@
                     <label class="key-label">
                         <span class="key-icon">[2]</span>
                         Fish Audio API Key
+                        <span class="key-optional">Optional</span>
                     </label>
-                    <input type="password" id="fish_key" class="key-input" placeholder="Enter your Fish Audio key" required>
+                    <input type="password" id="fish_key" class="key-input" placeholder="Enter your Fish Audio key (optional)">
                     <a href="{{ links.fishaudio }}" target="_blank" class="key-link">
                         Get key ->
                     </a>
@@ -47,8 +71,9 @@
                     <label class="key-label">
                         <span class="key-icon">[3]</span>
                         HuggingFace API Token
+                        <span class="key-optional">Optional</span>
                     </label>
-                    <input type="password" id="hf_key" class="key-input" placeholder="hf_..." required>
+                    <input type="password" id="hf_key" class="key-input" placeholder="hf_... (optional)">
                     <a href="{{ links.huggingface }}" target="_blank" class="key-link">
                         Get token ->
                     </a>
@@ -61,7 +86,7 @@
                         <button type="button" class="setup-lang-btn active" data-lang="en">🇬🇧 English</button>
                         <button type="button" class="setup-lang-btn" data-lang="de">🇩🇪 Deutsch</button>
                         <button type="button" class="setup-lang-btn" data-lang="fr">🇫🇷 Français</button>
-                        <button type="button" class="setup-lang-btn" data-lang="sr">🇷🇸 Srpski</button>
+                        <button type="button" class="setup-lang-btn" data-lang="pt">🇵🇹 Português</button>
                         <button type="button" class="setup-lang-btn" data-lang="ru">🇷🇺 Русский</button>
                     </div>
                 </div>
@@ -82,6 +107,28 @@
     </div>
 
     <script>
+        //* Start OpenRouter OAuth from the primary setup button
+        //* Запуск OpenRouter OAuth с основной кнопки настройки
+        document.getElementById("oauth-start").addEventListener("click", () => {
+            const btn = document.getElementById("oauth-start");
+            btn.disabled = true;
+            btn.querySelector("small").textContent = "Connecting to OpenRouter...";
+            window.location.href = "/api/oauth/openrouter/start";
+        });
+
+        //* Open all provider key pages with one user gesture
+        //* Открыть все страницы ключей одним нажатием
+        document.getElementById("open-all-keys").addEventListener("click", () => {
+            const pages = [
+                "{{ links.openrouter }}",
+                "{{ links.fishaudio }}",
+                "{{ links.huggingface }}",
+            ];
+            for (const url of pages) {
+                window.open(url, "_blank", "noopener");
+            }
+        });
+
         //* Language switcher on setup page
         //* Переключатель языка на странице настройки
         document.querySelectorAll(".setup-lang-btn").forEach(btn => {
@@ -103,13 +150,16 @@
             const activeLang = document.querySelector(".setup-lang-btn.active");
             const lang = activeLang ? activeLang.dataset.lang : "en";
 
+            //* Localized labels for the setup flow / Локализованные подписи мастера настройки
+            const setupLabels = {
+                ru: { saving: "Сохранение...", start: "Начать использовать", saveError: "Ошибка сохранения", connError: "Ошибка соединения: " },
+                pt: { saving: "Salvando...", start: "Começar a usar", saveError: "Erro ao salvar", connError: "Erro de conexão: " },
+            };
+            const lbl = setupLabels[lang] || { saving: "Saving...", start: "Start using", saveError: "Save error", connError: "Connection error: " };
+
             //* Update button text based on language
             //* Меняем текст кнопки в зависимости от языка
-            if (lang === "ru") {
-                btnText.textContent = "Сохранение...";
-            } else {
-                btnText.textContent = "Saving...";
-            }
+            btnText.textContent = lbl.saving;
             loader.style.display = "inline";
             btn.disabled = true;
             errorEl.style.display = "none";
@@ -129,18 +179,14 @@
                 if (data.success) {
                     window.location.href = "/";
                 } else {
-                    errorEl.textContent = data.error || (lang === "ru" ? "Ошибка сохранения" : "Save error");
+                    errorEl.textContent = data.error || lbl.saveError;
                     errorEl.style.display = "block";
                 }
             } catch (err) {
-                errorEl.textContent = (lang === "ru" ? "Ошибка соединения: " : "Connection error: ") + err.message;
+                errorEl.textContent = lbl.connError + err.message;
                 errorEl.style.display = "block";
             } finally {
-                if (lang === "ru") {
-                    btnText.textContent = "Начать использовать";
-                } else {
-                    btnText.textContent = "Start using";
-                }
+                btnText.textContent = lbl.start;
                 loader.style.display = "none";
                 btn.disabled = false;
             }

@@ -12,88 +12,95 @@
     <link rel="icon" type="image/png" href="/static/app_img/icon.png">
     <link rel="stylesheet" href="/static/css/style.css?v={{ cache_bust }}">
     <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
 </head>
 <body class="theme-{{ theme }}">
     <!--* Splash screen / Заставка при запуске -->
     <div id="splash-overlay" class="splash-overlay">
         <div class="splash-content">
+            <div class="splash-orb"><span>✦</span></div>
             <span class="splash-title">AI Assistant</span>
         </div>
     </div>
+    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
     <!--! Sidebar / Боковая панель — навигация, управление моделью, голосом и настройками -->
     <div class="app-container">
-        <aside class="sidebar">
+        <aside class="sidebar" id="app-sidebar">
             <!--* Sidebar header / Заголовок боковой панели -->
             <div class="sidebar-header">
-                <h2>AI Assistant</h2>
+                <div class="brand">
+                    <div class="brand-orb"><span>✦</span></div>
+                    <div class="brand-copy">
+                        <h2>AI Assistant</h2>
+                        <span class="brand-tag">{{ t.brand_tag }}</span>
+                    </div>
+                </div>
+                <button id="sidebar-close" class="sidebar-close" type="button" aria-label="Close sidebar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
             </div>
 
-            <!--* Model selector section / Выбор модели -->
-            <div class="sidebar-section">
-                <label class="select-label">{{ t.model_label }}</label>
-                <select id="model-select" class="styled-select">
-                    {% for m in models %}
-                    <option value="{{ m.id }}" data-provider="{{ m.provider }}">
-                        {{ m.name }} ({{ m.provider }})
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <!--! Voice section / Выбор голоса и управление звуком -->
-            <div class="sidebar-section">
-                <label class="select-label">{{ t.voice_label }}</label>
-                <div class="voice-row">
-                    <select id="voice-select" class="styled-select">
-                        <option value="">{{ t.no_voice }}</option>
-                        {% for v_name, v_id in voices %}
-                        <option value="{{ v_id }}">{{ v_name }}</option>
+            <div class="sidebar-scroll">
+                <!--* Model selector section / Выбор модели -->
+                <div class="sidebar-section model-block">
+                    <label class="select-label">{{ t.model_label }}</label>
+                    <select id="model-select" class="styled-select">
+                        {% for m in models %}
+                        <option value="{{ m.id }}" data-provider="{{ m.provider }}">
+                            {{ m.name }} ({{ m.provider }})
+                        </option>
                         {% endfor %}
                     </select>
-                    <!--? Mute toggle / Вкл/выкл звука — переключает иконку динамика -->
-                    <button id="mute-toggle" class="mute-btn" title="{{ t.mute_tooltip }}">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="mute-icon-on">
-                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
-                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    <div class="model-hint">
+                        <span class="model-hint-dot"></span>
+                        <span>{{ t.status_ready }}</span>
+                    </div>
+                </div>
+                <!--! Voice section / Выбор голоса и управление звуком -->
+                <div class="sidebar-section voice-block">
+                    <label class="select-label">{{ t.voice_label }}</label>
+                    <div class="voice-row">
+                        <select id="voice-select" class="styled-select">
+                            <option value="">{{ t.no_voice }}</option>
+                            {% for v_name, v_id in voices %}
+                            <option value="{{ v_id }}">{{ v_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <!--? Mute toggle / Вкл/выкл звука — переключает иконку динамика -->
+                        <button id="mute-toggle" class="mute-btn" title="{{ t.mute_tooltip }}">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="mute-icon-on">
+                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                            </svg>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="mute-icon-off" style="display:none">
+                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                                <line x1="23" y1="9" x2="17" y2="15"/>
+                                <line x1="17" y1="9" x2="23" y2="15"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!--* Voice browser entry / Переход в каталог голосов Fish Audio -->
+                <div class="sidebar-section voice-manage-section">
+                    <button id="browse-voices-btn" class="sidebar-btn browse-voices-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 10v4"/><path d="M7 6v12"/><path d="M11 3v18"/><path d="M15 7v10"/><path d="M19 9v6"/><path d="M23 11v2"/>
                         </svg>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="mute-icon-off" style="display:none">
-                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                            <line x1="23" y1="9" x2="17" y2="15"/>
-                            <line x1="17" y1="9" x2="23" y2="15"/>
-                        </svg>
+                        <span>{{ t.browse_voices }}</span>
                     </button>
                 </div>
             </div>
 
-            <!--* Add voice section / Добавление пользовательского голоса -->
-            <div class="sidebar-section voice-manage-section">
-                <button id="toggle-add-voice" class="sidebar-btn">{{ t.add_voice }}</button>
-                <div id="add-voice-form" class="add-voice-form" style="display:none">
-                    <input type="text" id="voice-name-input" class="sidebar-input"
-                           placeholder="{{ t.voice_name_ph }}">
-                    <div class="voice-url-row">
-                        <input type="text" id="voice-url-input" class="sidebar-input"
-                               placeholder="{{ t.voice_url_ph }}">
-                    </div>
-                    <a href="https://fish.audio/app/discovery/" target="_blank" class="browse-voices-link">{{ t.browse_voices }}</a>
-                    <button id="add-voice-btn" class="sidebar-btn add-voice-submit">
-                        {{ t.add_voice }}
-                    </button>
-                    <div id="voice-msg" class="voice-msg"></div>
-                    <button id="how-to-add-voice-btn" class="sidebar-btn how-to-add-voice-btn">{{ t.how_to_add_voice }}</button>
-                </div>
-                <div id="custom-voices-list" class="custom-voices-list"></div>
-            </div>
             <!--! Action buttons section / Кнопки действий: очистка, настройки, сброс -->
-            <div class="sidebar-section">
-                <button id="clear-chat-btn" class="sidebar-btn">{{ t.clear_chat }}</button>
+            <div class="sidebar-section sidebar-bottom-actions">
                 <button id="clear-history-btn" class="sidebar-btn danger">{{ t.clear_history }}</button>
-                <button id="settings-btn" class="sidebar-btn settings-btn">{{ t.settings }}</button>
                 <button id="reset-btn" class="sidebar-btn danger">{{ t.reset_settings }}</button>
             </div>
             <!--? Sidebar footer / Подвал боковой панели — версия и ссылка на GitHub -->
             <div class="sidebar-footer">
-                    <span class="version">v1.0</span>
+                    <span class="version">v{{ version }}</span>
                     <a href="https://github.com/AnonimPython" target="_blank" class="github-link">
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
                         AnonimPython
@@ -109,50 +116,61 @@
                 <button id="update-banner-dismiss" class="update-banner-dismiss">{{ t.update_dismiss }}</button>
             </div>
             <!--* Chat header / Заголовок чата: статус, индикатор голоса -->
-            <div class="chat-header">
-                <span id="status-indicator" class="status-dot"></span>
-                <span id="status-text">{{ t.status_ready }}</span>
-            </div>
+            <header class="chat-header">
+                <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Open sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <div class="header-context">
+                    <span class="header-kicker">
+                        <span id="status-indicator" class="status-dot"></span>
+                        <span id="status-text">{{ t.status_ready }}</span>
+                    </span>
+                    <span class="header-title">
+                        AI Assistant
+                        <span id="model-badge" class="model-badge">{{ models[0].name if models else "" }}</span>
+                    </span>
+                </div>
+                <div class="header-actions">
+                    <button id="browse-models-btn" class="header-action">
+                        <span class="header-action-icon">✨</span>
+                        <span class="header-action-label">{{ t.browse_models }}</span>
+                    </button>
+                    <button id="clear-chat-btn" class="header-icon-btn" title="{{ t.clear_chat }}" aria-label="{{ t.clear_chat }}">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <button id="settings-btn" class="header-icon-btn" title="{{ t.settings }}" aria-label="{{ t.settings }}">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    </button>
+                </div>
+            </header>
             <!--? Messages container / Контейнер сообщений — сюда рендерятся все сообщения чата -->
             <div id="chat-messages" class="chat-messages"></div>
 
-            <!--* Input area / Область ввода: файлы, текстовое поле, микрофон, кнопка отправки -->
-            <div class="input-area">
-                <div id="uploaded-files" class="uploaded-files"></div>
-                <div class="input-row">
-                    <button id="file-upload-btn" class="input-icon-btn" title="Upload file / Загрузить файл">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                        </svg>
-                    </button>
-                    <input type="file" id="file-input" multiple style="display:none" accept=".txt,.py,.js,.html,.css,.json,.md,.csv,.pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.svg,.mp3,.wav,.zip">
-                    <textarea id="message-input" class="message-input"
-                              placeholder="{{ t.input_placeholder }}" rows="1"
-                              oninput="autoResize(this)"></textarea>
-                    <button id="mic-btn" class="input-icon-btn" title="Voice input / Голосовой ввод">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                            <line x1="12" y1="19" x2="12" y2="22"/>
-                        </svg>
-                    </button>
-                    <button id="send-btn" class="send-btn" disabled>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="12" y1="19" x2="12" y2="5"></line>
-                            <polyline points="5 12 12 5 19 12"></polyline>
-                        </svg>
-                    </button>
+            <!--* Input area / Область ввода: текст, микрофон, кнопка отправки -->
+            <div class="composer-area">
+                <div class="input-area">
+                    <div class="input-row">
+                        <textarea id="message-input" class="message-input"
+                                  placeholder="{{ t.input_placeholder }}" rows="1"
+                                  oninput="autoResize(this)"></textarea>
+                        <button id="mic-btn" class="input-icon-btn" title="Voice input / Голосовой ввод">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="22"/>
+                            </svg>
+                        </button>
+                        <button id="send-btn" class="send-btn" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="19" x2="12" y2="5"></line>
+                                <polyline points="5 12 12 5 19 12"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="mic-status" class="mic-status"></div>
                 </div>
-                <div id="mic-status" class="mic-status"></div>
             </div>
         </main>
-    </div>
-
-    <!--* Drop zone overlay / Оверлей для перетаскивания файлов -->
-    <div id="drop-zone" class="drop-zone" style="display:none">
-        <div class="drop-zone-content">
-            <span class="drop-plus">+</span>
-        </div>
     </div>
 
     <!--? Hidden audio player / Скрытый аудиоплеер — для воспроизведения голосовых ответов -->
@@ -176,7 +194,7 @@
             </div>
             <div class="settings-body">
                 <!--* Theme presets / Пресеты темы оформления — выбор и применение цветовой схемы -->
-                <div class="settings-section">
+                <div class="settings-section settings-wide">
                     <h4>{{ t.theme }}</h4>
                     <div id="theme-presets" class="theme-presets">
                         <div class="theme-card" data-theme="dark-purple">
@@ -258,8 +276,8 @@
                             <span class="theme-card-name">Black</span>
                         </div>
                         <div class="theme-card" data-theme="light-white">
-                            <div class="theme-circle" style="background:#fff;border-color:#ccc">
-                                <span class="theme-dot" style="background:#6c63ff"></span>
+                            <div class="theme-circle" style="background:#fff;border-color:#bfd0e4">
+                                <span class="theme-dot" style="background:#2563eb"></span>
                             </div>
                             <span class="theme-card-name">White</span>
                         </div>
@@ -285,7 +303,7 @@
                         <button class="lang-btn {% if lang == 'en' %}active{% endif %}" data-lang="en">🇬🇧 EN</button>
                         <button class="lang-btn {% if lang == 'de' %}active{% endif %}" data-lang="de">🇩🇪 DE</button>
                         <button class="lang-btn {% if lang == 'fr' %}active{% endif %}" data-lang="fr">🇫🇷 FR</button>
-                        <button class="lang-btn {% if lang == 'sr' %}active{% endif %}" data-lang="sr">🇷🇸 SR</button>
+                        <button class="lang-btn {% if lang == 'pt' %}active{% endif %}" data-lang="pt">🇵🇹 PT</button>
                         <button class="lang-btn {% if lang == 'ru' %}active{% endif %}" data-lang="ru">🇷🇺 RU</button>
                     </div>
                 </div>
@@ -299,13 +317,13 @@
                     </label>
                 </div>
                 <!--? History limit / Лимит истории — ограничение количества сохраняемых сообщений -->
-                <div class="settings-section">
+                <div class="settings-section settings-wide">
                     <h4>{{ t.history_limit }}</h4>
                     <input type="number" id="history-limit-input" class="sidebar-input settings-key-input" value="10" min="1" max="50">
                     <span class="history-limit-warn">{{ t.history_limit_warning }}</span>
                 </div>
                 <!--! API keys / API-ключи — OpenRouter, Fish Audio, Hugging Face -->
-                <div class="settings-section">
+                <div class="settings-section settings-wide">
                     <h4>{{ t.api_keys }}</h4>
                     <label class="select-label">{{ t.or_key_label }}</label>
                     <input type="password" id="or-key-input" class="sidebar-input settings-key-input" placeholder="sk-or-...">
@@ -317,23 +335,16 @@
                     <span id="keys-save-msg" class="voice-msg"></span>
                 </div>
                 <!--* System prompt / Системный промпт — редактирование инструкции для ИИ -->
-                <div class="settings-section">
+                <div class="settings-section settings-wide">
                     <h4>{{ t.system_prompt }}</h4>
                     <textarea id="system-prompt-input" class="sidebar-input system-prompt-textarea"
                               placeholder="{{ t.system_prompt_ph }}"></textarea>
                     <button id="save-system-prompt-btn" class="sidebar-btn">{{ t.system_prompt_save }}</button>
                     <span id="system-prompt-msg" class="voice-msg"></span>
                 </div>
-                <!--* Agents / Агенты — проверка сайтов на платность/бесплатность -->
+                <!--* Custom models / Мои модели — added via the free models browser -->
                 <div class="settings-section">
                     <h4>{{ t.agents_title }}</h4>
-                    <div class="agent-check-row">
-                        <input type="text" id="agent-url-input" class="sidebar-input"
-                               placeholder="{{ t.agent_url_ph }}">
-                        <button id="agent-check-btn" class="sidebar-btn">{{ t.agent_check }}</button>
-                    </div>
-                    <div id="agent-result" class="agent-result"></div>
-                    <button id="agent-save-btn" class="sidebar-btn" style="display:none">{{ t.agent_save }}</button>
                     <div id="saved-agents-list" class="saved-agents-list"></div>
                 </div>
                 <!--* Beta features / Бета-функции -->
@@ -346,7 +357,7 @@
                     </label>
                 </div>
                 <!--* Hand Assistant / Управление мышью жестами руки через камеру -->
-                <div class="settings-section">
+                <div class="settings-section settings-wide">
                     <h4>{{ t.hand_title }}</h4>
                     <label class="toggle-row">
                         <input type="checkbox" id="hand-toggle">
@@ -364,50 +375,69 @@
         </div>
     </div>
 
-    <!--* Voice guide overlay / Окно инструкции по добавлению голоса -->
-    <div id="voice-guide-overlay" class="guide-overlay" style="display:none">
-        <div class="guide-modal">
-            <button id="guide-close" class="guide-close">&times;</button>
-            <h2>{{ t.guide_title }}</h2>
-            <div class="guide-steps">
-                <div class="guide-step">
-                    <div class="guide-step-num">1</div>
-                    <div class="guide-step-body">
-                        <p>{{ t.guide_step1 }}</p>
-                        <img src="/static/how_to_add_voice/step_1.png" alt="Step 1">
-                    </div>
+    <!--* Free models browser overlay / Окно браузера бесплатных моделей -->
+    <div id="models-modal" class="settings-overlay" style="display:none">
+        <div class="settings-panel models-panel">
+            <div class="settings-header">
+                <h3>{{ t.models_title }}</h3>
+                <button id="models-close" class="settings-close" aria-label="Close">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="settings-body">
+                <div class="models-notice">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+                    <span>{{ t.models_text_only_notice }}</span>
                 </div>
-                <div class="guide-step">
-                    <div class="guide-step-num">2</div>
-                    <div class="guide-step-body">
-                        <p>{{ t.guide_step2 }}</p>
-                        <img src="/static/how_to_add_voice/step_2.png" alt="Step 2">
-                    </div>
+                <div class="models-toolbar">
+                    <input type="text" id="models-search" class="sidebar-input"
+                           placeholder="{{ t.models_search_ph }}">
+                    <button id="models-refresh" class="sidebar-btn refresh-icon-btn" title="{{ t.models_refresh }}" aria-label="{{ t.models_refresh }}">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                    </button>
                 </div>
-                <div class="guide-step">
-                    <div class="guide-step-num">3</div>
-                    <div class="guide-step-body">
-                        <p>{{ t.guide_step3 }}</p>
-                        <img src="/static/how_to_add_voice/step_3.jpg" alt="Step 3">
-                    </div>
-                </div>
-                <div class="guide-step">
-                    <div class="guide-step-num">4</div>
-                    <div class="guide-step-body">
-                        <p>{{ t.guide_step4 }}</p>
-                        <img src="/static/how_to_add_voice/step_4.png" alt="Step 4">
-                    </div>
-                </div>
-                <div class="guide-step">
-                    <div class="guide-step-num">5</div>
-                    <div class="guide-step-body">
-                        <p>{{ t.guide_step5 }}</p>
-                        <img src="/static/how_to_add_voice/step_5.png" alt="Step 5">
-                    </div>
-                </div>
+                <div id="models-status" class="voice-msg"></div>
+                <div id="models-list" class="models-list"></div>
             </div>
         </div>
     </div>
+
+    <!--* Fish Audio voices browser / Каталог голосов Fish Audio -->
+    <div id="voices-modal" class="settings-overlay" style="display:none">
+        <div class="settings-panel voices-panel">
+            <div class="settings-header">
+                <h3>{{ t.voices_title }}</h3>
+                <button id="voices-close" class="settings-close" aria-label="Close">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="settings-body">
+                <div class="voices-toolbar">
+                    <input type="text" id="voices-search" class="sidebar-input"
+                           placeholder="{{ t.voices_search_ph }}">
+                    <select id="voices-language" class="sidebar-input voices-language">
+                        <option value="">{{ t.voices_all_languages }}</option>
+                        <option value="ru">Русский</option>
+                        <option value="en">English</option>
+                        <option value="zh">中文</option>
+                        <option value="ja">日本語</option>
+                        <option value="es">Español</option>
+                        <option value="de">Deutsch</option>
+                        <option value="fr">Français</option>
+                        <option value="pt">Português</option>
+                        <option value="ko">한국어</option>
+                    </select>
+                    <button id="voices-refresh" class="sidebar-btn refresh-icon-btn" title="{{ t.models_refresh }}" aria-label="{{ t.models_refresh }}">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                    </button>
+                </div>
+                <div id="voices-status" class="voice-msg"></div>
+                <div id="voices-list" class="voices-list"></div>
+                <button id="voices-load-more" class="sidebar-btn voices-load-more" style="display:none">{{ t.voices_load_more }}</button>
+            </div>
+        </div>
+    </div>
+
     <!--! Script block / Блок скриптов — переводы, язык, основная логика приложения -->
     <script>
         const TRANSLATIONS = {{ t | tojson | safe }};

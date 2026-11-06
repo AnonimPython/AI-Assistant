@@ -40,8 +40,11 @@ const muteIconOn      = document.getElementById("mute-icon-on");
 const muteIconOff     = document.getElementById("mute-icon-off");
 
 const t = TRANSLATIONS || {};
+//* Locale for dates — always follow the UI language, not the OS locale
+//* Локаль для дат — всегда следует языку интерфейса, а не локали ОС
+const LOCALE_BY_LANG = { en: "en-US", ru: "ru-RU", de: "de-DE", fr: "fr-FR", pt: "pt-BR" };
+const UI_LOCALE = LOCALE_BY_LANG[CURRENT_LANG] || "en-US";
 let isLoading = false;
-let customVoiceList = [];
 let isMuted = false;
 
 
@@ -52,7 +55,7 @@ let isMuted = false;
 function autoResize(textarea) {
     textarea.style.height = "auto";
     textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
-    sendBtn.disabled = !textarea.value.trim();
+    sendBtn.disabled = isLoading || !textarea.value.trim();
 }
 
 // Auto-resize on every input event
@@ -152,93 +155,6 @@ muteToggle.addEventListener("click", () => {
 
 
 
-//? Voice management — add custom voices from Fish Audio
-//? Управление голосами — добавление своих голосов с Fish Audio
-
-const toggleAddVoiceBtn = document.getElementById("toggle-add-voice");
-const addVoiceForm     = document.getElementById("add-voice-form");
-const voiceNameInput   = document.getElementById("voice-name-input");
-const voiceUrlInput    = document.getElementById("voice-url-input");
-const addVoiceBtn      = document.getElementById("add-voice-btn");
-const voiceMsg         = document.getElementById("voice-msg");
-const customVoicesList = document.getElementById("custom-voices-list");
-
-// Show/hide the add-voice form panel
-toggleAddVoiceBtn.addEventListener("click", () => {
-    // Toggle form visibility (hidden when "none" or unset)
-    const show = addVoiceForm.style.display === "none" || !addVoiceForm.style.display;
-    addVoiceForm.style.display = show ? "block" : "none";
-    // Clear any leftover success/error message when reopening
-    // Очищаем сообщения при повторном открытии
-    if (show) { voiceMsg.textContent = ""; voiceMsg.className = "voice-msg"; }
-    // Auto-focus name input when form opens
-    if (show) voiceNameInput.focus();
-});
-
-const guideBtn   = document.getElementById("how-to-add-voice-btn");
-const guideOverlay = document.getElementById("voice-guide-overlay");
-const guideClose  = document.getElementById("guide-close");
-
-guideBtn.addEventListener("click", () => {
-    guideOverlay.style.display = "flex";
-    document.body.style.overflow = "hidden";
-});
-
-//* Close the guide overlay / Закрыть оверлей руководства
-function closeGuide() {
-    guideOverlay.style.display = "none";
-    document.body.style.overflow = "";
-}
-
-guideClose.addEventListener("click", closeGuide);
-guideOverlay.addEventListener("click", (e) => {
-    if (e.target === guideOverlay) closeGuide();
-});
-
-//* Adds a new voice via API
-//* Добавляет новый голос через API
-addVoiceBtn.addEventListener("click", async () => {
-// Validate fields before sending
-    const name = voiceNameInput.value.trim();
-    const url  = voiceUrlInput.value.trim();
-    if (!name || !url) {
-        voiceMsg.textContent = t.name_required || "Please fill in all fields";
-        voiceMsg.className   = "voice-msg error";
-        return;
-    }
-
-    addVoiceBtn.disabled = true;
-    addVoiceBtn.textContent = t.voice_adding || "Adding...";
-    voiceMsg.textContent = "";
-
-    try {
-        const r = await fetch("/api/voices/add", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, url }),
-        });
-        const data = await r.json();
-        if (data.success) {
-            voiceNameInput.value = "";
-            voiceUrlInput.value  = "";
-            voiceMsg.textContent = t.voice_add_success || "Voice added!";
-            voiceMsg.className   = "voice-msg success";
-            rebuildVoiceSelect(data.voices);
-            fetchCustomVoices();
-            addVoiceForm.style.display = "none";
-        } else {
-            voiceMsg.textContent = data.error || t.voice_invalid_url || "Invalid voice link";
-            voiceMsg.className   = "voice-msg error";
-        }
-    } catch {
-        voiceMsg.textContent = t.voice_add_error || "Failed to add voice";
-        voiceMsg.className   = "voice-msg error";
-    } finally {
-        addVoiceBtn.disabled = false;
-        addVoiceBtn.textContent = t.add_voice || "Add voice";
-    }
-});
-
 //* Rebuilds the voice select dropdown with a fresh list
 //* Перестраивает выпадающий список голосов
 function rebuildVoiceSelect(voices) {
@@ -262,10 +178,6 @@ function rebuildVoiceSelect(voices) {
         }
     }
 }
-
-//* Fetch and render only custom voices
-//* Загружаем и отображаем только добавленные голоса
-fetchCustomVoices();
 
 //* Check for updates and show banner if available
 //* Проверка обновлений и показ баннера
@@ -303,58 +215,6 @@ function initCheckUpdatesToggle() {
                 body: JSON.stringify({ enabled }),
             });
         } catch {}
-    });
-}
-
-//* Fetch custom voice list from the server
-//* Загрузка списка пользовательских голосов с сервера
-async function fetchCustomVoices() {
-    try {
-        const r    = await fetch("/api/voices/custom");
-        const data  = await r.json();
-        if (data.voices) {
-            customVoiceList = data.voices;
-            renderCustomVoicesList(data.voices);
-        }
-    } catch {}
-}
-
-
-//* Render custom voices list in the sidebar
-//* Отрисовка списка пользовательских голосов в боковой панели
-function renderCustomVoicesList(voices) {
-    customVoicesList.innerHTML = "";
-    if (!voices || voices.length === 0) {
-        customVoicesList.innerHTML = '<span class="voice-no-custom">' + (t.voice_no_custom || "No custom voices yet") + "</span>";
-        return;
-    }
-    // Create a list item for each custom voice
-    for (const v of voices) {
-        const item = document.createElement("div");
-        item.className = "voice-item";
-        item.innerHTML = `<span class="voice-item-name">${escapeHtml(v[0])}</span>
-            <button class="voice-remove-btn" data-id="${escapeHtml(v[1])}">${t.voice_remove || "Remove"}</button>`;
-        customVoicesList.appendChild(item);
-    }
-    // Attach a remove handler to each voice delete button
-    customVoicesList.querySelectorAll(".voice-remove-btn").forEach(btn => {
-        btn.addEventListener("click", async () => {
-            const voiceId = btn.dataset.id;
-            try {
-                const r = await fetch("/api/voices/remove", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ voice_id: voiceId }),
-                });
-                const data = await r.json();
-                if (data.success) {
-                    rebuildVoiceSelect(data.voices);
-                    fetchCustomVoices();
-                }
-            } catch {
-                alert("Failed to remove voice");
-            }
-        });
     });
 }
 
@@ -511,40 +371,6 @@ function addTtsErrorRow(parentDiv, ttsError) {
 }
 
 
-//* Add a "Speak" button that generates TTS on demand (used when files disabled auto-TTS)
-//* Добавляет кнопку "Озвучить" для генерации TTS по запросу (когда файлы отключили авто-TTS)
-function addSpeakButton(parentDiv, text) {
-    const row = document.createElement("div");
-    row.className = "audio-row";
-    const btn = document.createElement("button");
-    btn.className = "audio-btn";
-    btn.innerHTML = "🔊 " + (t.speak || "Озвучить");
-    btn.onclick = async () => {
-        btn.disabled = true;
-        btn.textContent = "⏳";
-        try {
-            const r = await fetch("/api/tts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text, voice: voiceSelect.value }),
-            });
-            const data = await r.json();
-            if (data.audio) {
-                btn.outerHTML = "";
-                addAudioRow(parentDiv, data.audio);
-                playAudio(data.audio);
-            } else {
-                btn.textContent = "❌ " + (data.error || "TTS error");
-            }
-        } catch {
-            btn.textContent = "❌ " + (t.connection_error || "Error");
-        }
-    };
-    row.appendChild(btn);
-    parentDiv.appendChild(row);
-}
-
-
 //* Show typing indicator (animated dots)
 //* Показ индикатора набора текста (анимированные точки)
 function showTyping() {
@@ -631,9 +457,13 @@ function formatMessage(text) {
     //* Reduce headings to bold (### text → **text**) / Заменяем заголовки на жирный текст
     text = text.replace(/^#{1,6}\s+(.+)$/gm, "**$1**");
     try {
-        return marked.parse(text);
+        const html = marked.parse(text);
+        //* Sanitize model output — it is untrusted and may contain raw HTML
+        //* Санитайзим ответ модели — он недоверенный и может содержать HTML
+        if (window.DOMPurify) return DOMPurify.sanitize(html);
+        return escapeHtml(text).replace(/\n/g, "<br>");
     } catch {
-        return text.replace(/\n/g, "<br>");
+        return escapeHtml(text).replace(/\n/g, "<br>");
     }
 }
 
@@ -642,10 +472,12 @@ function formatMessage(text) {
 //* Экранирование HTML-сущностей в строке
 // Example: escapeHtml("<script>alert(1)</script>") → "&lt;script&gt;alert(1)&lt;/script&gt;"
 function escapeHtml(text) {
-    return text
+    return String(text)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 
@@ -686,9 +518,16 @@ function playAudio(b64) {
 //* Обновление индикатора статуса (готов / обработка / ошибка)
 function setStatus(text, type) {
     statusText.textContent = text;
+    const glow = type === "ready" ? "rgba(0, 200, 83, 0.45)" :
+                 type === "processing" ? "rgba(255, 165, 2, 0.45)" :
+                 type === "error" ? "rgba(255, 71, 87, 0.45)" : "rgba(136, 136, 170, 0.35)";
+    const ring = type === "ready" ? "rgba(0, 200, 83, 0.09)" :
+                 type === "processing" ? "rgba(255, 165, 2, 0.09)" :
+                 type === "error" ? "rgba(255, 71, 87, 0.09)" : "rgba(136, 136, 170, 0.08)";
     statusDot.style.background = type === "ready" ? "#00c853" :
                                   type === "processing" ? "#ffa502" :
                                   type === "error" ? "#ff4757" : "#8888aa";
+    statusDot.style.boxShadow = `0 0 0 4px ${ring}, 0 0 12px ${glow}`;
 }
 
 
@@ -746,15 +585,7 @@ initCheckUpdatesToggle();
 //* Элемент заставки (сохранён для ссылки, заставка запускается через IIFE в начале файла)
 const splashOverlay    = document.getElementById("splash-overlay");
 
-//* URL input for agent site checker / Поле ввода URL для проверки сайтов агента
-const agentUrlInput    = document.getElementById("agent-url-input");
-//* Check button for agent URL / Кнопка проверки URL агента
-const agentCheckBtn    = document.getElementById("agent-check-btn");
-//* Result display for agent check / Отображение результата проверки агента
-const agentResult      = document.getElementById("agent-result");
-//* Save button for confirmed agent / Кнопка сохранения подтверждённого агента
-const agentSaveBtn     = document.getElementById("agent-save-btn");
-//* Container for saved agents list / Контейнер для списка сохранённых агентов
+//* Container for saved custom models / Контейнер для списка сохранённых моделей
 const savedAgentsList  = document.getElementById("saved-agents-list");
 //* Beta: branch toggle / Бета: переключатель мульти-ответа
 const branchToggle     = document.getElementById("branch-toggle");
@@ -834,13 +665,13 @@ historyLimitInput.addEventListener("input", () => {
     }, 500);
 });
 
-// Save all three API keys at once
+// Save API keys (OpenRouter required, Fish/HF optional)
 saveKeysBtn.addEventListener("click", async () => {
     const orKey   = orKeyInput.value.trim();
     const fishKey = fishKeyInput.value.trim();
     const hfKey   = hfKeyInput.value.trim();
-    if (!orKey || !fishKey || !hfKey) {
-        keysSaveMsg.textContent = "All three keys are required";
+    if (!orKey) {
+        keysSaveMsg.textContent = "OpenRouter key is required";
         keysSaveMsg.className = "voice-msg error";
         return;
     }
@@ -982,88 +813,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     checkForUpdates();
 });
 
-//* Agent URL checker — analyzes a URL for free/paid status
-//* Проверка URL агента — анализирует сайт на платность/бесплатность
-//* Stores the last checked result before saving / Сохраняет последний результат проверки перед сохранением
-let lastAgentCheck = null;
-
-//* "Check" button — fetches URL and analyzes page content / Кнопка "Проверить" — запрашивает URL и анализирует контент
-agentCheckBtn.addEventListener("click", async () => {
-    const url = agentUrlInput.value.trim();
-    if (!url) return;
-
-    //* Disable button and show loading state / Блокируем кнопку и показываем загрузку
-    agentCheckBtn.disabled = true;
-    agentCheckBtn.textContent = t.agent_checking || "Checking...";
-    agentResult.textContent = "";
-    agentResult.className = "agent-result";
-    agentSaveBtn.style.display = "none";
-
-    try {
-        //* POST URL to backend for analysis / Отправляем URL на сервер для анализа
-        const r = await fetch("/api/agents/check-url", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url }),
-        });
-        const data = await r.json();
-        if (data.success) {
-            //* Store checked result for saving later / Сохраняем результат для последующего сохранения
-            lastAgentCheck = { name: data.name, model_id: data.model_id, url: data.url, status: data.status };
-            const icon = data.status === "free" ? "✅" : data.status === "paid" ? "💰" : "❓";
-            agentResult.textContent = icon + " " + data.label;
-            agentResult.className = "agent-result " + data.status;
-            agentSaveBtn.style.display = "block"; //* Show save button / Показываем кнопку сохранения
-        } else {
-            agentResult.textContent = "❌ " + (data.error || "Check failed");
-            agentResult.className = "agent-result error";
-        }
-    } catch {
-        //* Network error / Ошибка сети
-        agentResult.textContent = "❌ " + (t.connection_error || "Connection error");
-        agentResult.className = "agent-result error";
-    } finally {
-        //* Re-enable button / Разблокируем кнопку
-        agentCheckBtn.disabled = false;
-        agentCheckBtn.textContent = t.agent_check || "Check";
-    }
-});
-
-//* "Save agent" button — adds model to chat model list / Кнопка "Сохранить агента" — добавляет модель в список чата
-agentSaveBtn.addEventListener("click", async () => {
-    if (!lastAgentCheck) return;
-    try {
-        const r = await fetch("/api/agents/add", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: lastAgentCheck.url }),
-        });
-        const data = await r.json();
-        if (data.success) {
-            agentSaveBtn.style.display = "none";
-            agentResult.textContent = "✅ " + (t.agent_saved || "Saved!");
-            agentUrlInput.value = "";
-            //* Add the model to the model-select dropdown / Добавляем модель в выпадающий список
-            if (data.model) {
-                const opt = document.createElement("option");
-                opt.value = data.model.id;
-                opt.textContent = data.model.name + " (openrouter)";
-                modelSelect.appendChild(opt);
-                modelSelect.value = data.model.id;
-            }
-            lastAgentCheck = null;
-            loadSavedAgents(); //* Refresh the saved list / Обновляем список сохранённых
-        } else {
-            agentResult.textContent = "❌ " + (data.error || "Save failed");
-            agentResult.className = "agent-result error";
-        }
-    } catch (err) {
-        agentResult.textContent = "❌ " + (t.connection_error || "Connection error");
-        agentResult.className = "agent-result error";
-    }
-});
-
-//* Fetch saved agents from the server / Загружает сохранённых агентов с сервера
+//* Fetch saved custom models from the server / Загружает сохранённые модели с сервера
 async function loadSavedAgents() {
     try {
         const r = await fetch("/api/agents/list");
@@ -1112,268 +862,453 @@ function renderSavedAgents(agents) {
 }
 
 //* ============================================================
-//* File upload & drag-drop / Загрузка файлов и drag-and-drop
+//* Free models browser / Браузер бесплатных моделей
 //* ============================================================
 
-//* Paperclip button to open file picker / Кнопка-скрепка для открытия выбора файла
-const fileUploadBtn = document.getElementById("file-upload-btn");
-//* Hidden <input type="file> element / Скрытый элемент <input type="file">
-const fileInput     = document.getElementById("file-input");
-//* Container that shows uploaded file chips / Контейнер с чипсами загруженных файлов
-const uploadedFilesEl = document.getElementById("uploaded-files");
-//* Fullscreen drop zone overlay (big + sign) / Полноэкранный оверлей дроп-зоны (большой +)
-const dropZone      = document.getElementById("drop-zone");
-//* In-memory array of uploaded files: {name, data (base64), type} / Массив загруженных файлов в памяти
-let uploadedFilesData = [];
+const browseModelsBtn = document.getElementById("browse-models-btn");
+const modelsModal     = document.getElementById("models-modal");
+const modelsClose     = document.getElementById("models-close");
+const modelsSearch    = document.getElementById("models-search");
+const modelsRefresh   = document.getElementById("models-refresh");
+const modelsStatus    = document.getElementById("models-status");
+const modelsList      = document.getElementById("models-list");
 
-//* Clicking the paperclip button triggers the hidden file input / Клик по скрепке открывает скрытый file input
-fileUploadBtn.addEventListener("click", () => fileInput.click());
+let freeModels       = [];
+let freeModelsLoaded = false;
+let modelsLoading    = false;
 
-//* When user selects files via the dialog / Когда пользователь выбрал файлы через диалог
-fileInput.addEventListener("change", () => {
-    handleFiles(fileInput.files);
-    fileInput.value = ""; //* Reset so same file can be re-selected / Сброс, чтобы тот же файл можно было выбрать снова
-});
+function openModelsModal() {
+    modelsModal.style.display = "flex";
+    if (!freeModelsLoaded) loadFreeModels(false);
+    else renderFreeModels();
+}
 
-//* Process FileList — read each file as base64 data URL / Обрабатывает FileList — читает каждый файл как base64 data URL
-function handleFiles(fileList) {
-    for (const f of fileList) {
-        //* Max 10 files at once / Максимум 10 файлов за раз
-        if (uploadedFilesData.length >= 10) break;
-        //* Skip duplicates by name / Пропускаем дубликаты по имени
-        if (uploadedFilesData.some(x => x.name === f.name)) continue;
-        const reader = new FileReader();
-        //* When file is read — store it and re-render the chips / Когда файл прочитан — сохраняем и перерисовываем чипсы
-        reader.onload = (e) => {
-            uploadedFilesData.push({
-                name: f.name,
-                data: e.target.result.split(",")[1] || e.target.result,
-                type: f.type,
-            });
-            renderUploadedFiles();
-        };
-        //* Start reading the file as a data URL (base64) / Начинаем чтение файла как data URL (base64)
-        reader.readAsDataURL(f);
+async function loadFreeModels(force) {
+    if (modelsLoading) return;
+    modelsLoading = true;
+    modelsStatus.textContent = t.models_loading || "Loading models...";
+    modelsStatus.className = "voice-msg";
+    modelsList.innerHTML = "";
+    try {
+        const r = await fetch("/api/models/browse" + (force ? "?refresh=1" : ""));
+        const data = await r.json();
+        if (!r.ok || !data.success) throw new Error(data.error || "HTTP " + r.status);
+        freeModels = data.items || [];
+        freeModelsLoaded = true;
+        modelsStatus.textContent = "";
+        renderFreeModels();
+    } catch (err) {
+        modelsStatus.textContent = (t.models_error || "Failed to load models") + ": " + err.message;
+        modelsStatus.className = "voice-msg error";
+        freeModelsLoaded = false;
+    } finally {
+        modelsLoading = false;
     }
 }
 
-//* Re-render all file chips in the uploaded-files container / Перерисовывает все чипсы файлов в контейнере
-function renderUploadedFiles() {
-    uploadedFilesEl.innerHTML = "";
-    for (const f of uploadedFilesData) {
-        const chip = document.createElement("span");
-        chip.className = "file-chip";
-        //* SVG file icon + filename + remove button / Иконка файла SVG + имя + кнопка удаления
-        chip.innerHTML = `
-            <svg class="file-chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-            </svg>
-            <span class="file-chip-name">${escapeHtml(f.name)}</span>
-            <button class="file-chip-remove" data-name="${escapeHtml(f.name)}">&times;</button>`;
-        uploadedFilesEl.appendChild(chip);
+function modelDateLabel(item) {
+    if (item.knowledge_cutoff) {
+        return (t.models_knowledge || "Knowledge cutoff") + ": " + item.knowledge_cutoff;
     }
-    //* Attach remove handler to each chip's × button / Вешаем обработчик удаления на каждую кнопку ×
-    document.querySelectorAll(".file-chip-remove").forEach(btn => {
-        btn.addEventListener("click", () => {
-            uploadedFilesData = uploadedFilesData.filter(x => x.name !== btn.dataset.name);
-            renderUploadedFiles();
-        });
+    if (item.created) {
+        const d = new Date(item.created * 1000);
+        if (!isNaN(d.getTime())) {
+            return (t.models_released || "Released") + ": " +
+                d.toLocaleDateString(UI_LOCALE, { year: "numeric", month: "short" });
+        }
+    }
+    return "";
+}
+
+function renderFreeModels() {
+    if (!modelsList) return;
+    const q = (modelsSearch.value || "").trim().toLowerCase();
+    const items = freeModels.filter(m => {
+        const hay = [m.name, m.full_name, m.author, m.id].join(" ").toLowerCase();
+        return !q || hay.includes(q);
     });
-}
 
-//* Enhance sendMessage to support files — rewire click listener
-//* Расширяем sendMessage поддержкой файлов — переподключаем обработчик клика
-sendBtn.removeEventListener("click", sendMessage);
-
-//* Keep reference to original sendMessage / Сохраняем ссылку на оригинальную sendMessage
-const __origSend = sendMessage;
-//* Replaces the original sendMessage — adds file attachment support
-//* Заменяет оригинальную sendMessage — добавляет поддержку файлов
-sendMessage = async function() {
-    const msg = messageInput.value.trim();
-    //* Allow sending when files are present even without text / Разрешаем отправку с файлами даже без текста
-    if (!msg && uploadedFilesData.length === 0) return;
-    if (isLoading) return;
-
-    //* Temporarily enable to pass the empty-msg guard / Временно включаем кнопку
-    sendBtn.disabled = false;
-
-    isLoading = true;
-    sendBtn.disabled = true;
-    setStatus(t.status_thinking || "Thinking...", "processing");
-
-    //* Default text when only files are sent / Текст по умолчанию, если отправлены только файлы
-    const textMsg = msg || "See attached files";
-    addMessage(textMsg, "user");
-
-    //* Render each attached file in the chat / Показываем каждый прикреплённый файл в чате
-    for (const f of uploadedFilesData) {
-        const fileDiv = document.createElement("div");
-        fileDiv.className = "message user";
-        const fc = document.createElement("div");
-        fc.className = "message-content";
-        const ext = f.name.split(".").pop().toLowerCase();
-        const isImg = ["png","jpg","jpeg","gif","svg","webp"].includes(ext);
-        if (isImg) {
-            //* Image files — show thumbnail preview / Изображения — показываем миниатюру
-            fc.innerHTML = `<img src="data:${f.type};base64,${f.data}" alt="${escapeHtml(f.name)}" style="max-width:200px;border-radius:8px"><br><span style="font-size:11px;color:var(--text-secondary)">${escapeHtml(f.name)}</span>`;
-        } else {
-            //* Other files — show file icon + name / Остальные файлы — иконка + имя
-            fc.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${escapeHtml(f.name)}`;
-        }
-        fileDiv.appendChild(fc);
-        chatMessages.appendChild(fileDiv);
-    }
-
-    //* Clear input and file list after sending / Очищаем поле ввода и список файлов после отправки
-    messageInput.value = "";
-    messageInput.style.height = "auto";
-    const filesToSend = [...uploadedFilesData];
-    const hadFiles = filesToSend.length > 0;
-    uploadedFilesData = [];
-    renderUploadedFiles();
-
-    //* Create empty bot message bubble — will be filled by stream / Создаём пустой пузырёк бота — заполнится стримом
-    const botDiv = document.createElement("div");
-    botDiv.className = "message bot";
-    const botContent = document.createElement("div");
-    botContent.className = "message-content";
-    botDiv.appendChild(botContent);
-    chatMessages.appendChild(botDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-
-    let fullText = "", audioB64 = null, ttsError = null;
-
-    //* Branch mode: skip streaming, get 3 variants at once
-    //* Режим ветвления: пропускаем стрим, получаем 3 варианта сразу
-    if (branchToggle && branchToggle.checked && !hadFiles) {
-        try {
-            setStatus(t.status_branching || "Generating alternatives...", "processing");
-            const br = await fetch("/api/chat/branch", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: textMsg, model: modelSelect.value }),
-            });
-            const bdata = await br.json();
-            if (bdata.branches && bdata.branches.length >= 3) {
-                showBranchCards(botContent, bdata.branches, botDiv);
-            } else {
-                botContent.innerHTML = "<em>Branching returned no variants</em>";
-            }
-        } catch (err) {
-            botContent.innerHTML = formatMessage("<span style='color:var(--danger)'>" + (t.connection_error || "Connection error") + ":</span> " + escapeHtml(err.message));
-        }
-        setStatus(t.status_ready || "Ready", "ready");
-        isLoading = false;
-        sendBtn.disabled = !messageInput.value.trim();
+    modelsList.innerHTML = "";
+    if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "models-empty";
+        empty.textContent = t.models_empty || "No free models found";
+        modelsList.appendChild(empty);
         return;
     }
 
+    for (const item of items) {
+        const card = document.createElement("div");
+        card.className = "model-card";
+
+        const info = document.createElement("div");
+        info.className = "model-info";
+
+        const nameRow = document.createElement("div");
+        nameRow.className = "model-name-row";
+        const name = document.createElement("span");
+        name.className = "model-name";
+        name.textContent = item.name;
+        nameRow.appendChild(name);
+        const badge = document.createElement("span");
+        badge.className = "model-free-badge";
+        badge.textContent = t.models_free_badge || "Free";
+        nameRow.appendChild(badge);
+        info.appendChild(nameRow);
+
+        const meta = document.createElement("div");
+        meta.className = "model-meta";
+        const author = document.createElement("span");
+        author.textContent = (t.models_author || "By") + " " + item.author;
+        meta.appendChild(author);
+        const dateLabel = modelDateLabel(item);
+        if (dateLabel) {
+            const date = document.createElement("span");
+            date.textContent = dateLabel;
+            meta.appendChild(date);
+        }
+        if (item.context_length) {
+            const ctx = document.createElement("span");
+            ctx.textContent = (t.models_context || "Context") + ": " +
+                Math.round(item.context_length / 1000) + "K";
+            meta.appendChild(ctx);
+        }
+        info.appendChild(meta);
+
+        if (item.description) {
+            const desc = document.createElement("div");
+            desc.className = "model-desc";
+            desc.textContent = item.description;
+            info.appendChild(desc);
+        }
+        card.appendChild(info);
+
+        const btn = document.createElement("button");
+        btn.className = "model-add-btn" + (item.added ? " added" : "");
+        btn.textContent = item.added ? (t.models_added || "Added") : (t.models_add || "Add");
+        btn.disabled = !!item.added;
+        btn.addEventListener("click", () => addFreeModel(item, btn));
+        card.appendChild(btn);
+
+        modelsList.appendChild(card);
+    }
+}
+
+async function addFreeModel(item, btn) {
+    btn.disabled = true;
+    btn.textContent = t.models_adding || "Adding...";
     try {
-        //* POST to streaming endpoint / POST на стрим-ендпоинт
-        const r = await fetch("/api/chat/stream", {
+        const r = await fetch("/api/agents/add", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_id: item.id, name: item.name, url: item.url }),
+        });
+        const data = await r.json();
+        if (!data.success) throw new Error(data.error || "Save failed");
+
+        item.added = true;
+        btn.textContent = t.models_added || "Added";
+        btn.classList.add("added");
+
+        if (data.model) {
+            let opt = Array.from(modelSelect.options).find(o => o.value === data.model.id);
+            if (!opt) {
+                opt = document.createElement("option");
+                modelSelect.appendChild(opt);
+            }
+            opt.value = data.model.id;
+            opt.textContent = data.model.name + " (openrouter)";
+            modelSelect.value = data.model.id;
+        }
+        loadSavedAgents();
+    } catch (err) {
+        btn.disabled = false;
+        btn.textContent = t.models_add || "Add";
+        modelsStatus.textContent = (t.models_error || "Failed to add model") + ": " + err.message;
+        modelsStatus.className = "voice-msg error";
+    }
+}
+
+if (browseModelsBtn) browseModelsBtn.addEventListener("click", openModelsModal);
+if (modelsClose) modelsClose.addEventListener("click", () => { modelsModal.style.display = "none"; });
+if (modelsModal) modelsModal.addEventListener("click", (e) => {
+    if (e.target === modelsModal) modelsModal.style.display = "none";
+});
+if (modelsSearch) modelsSearch.addEventListener("input", renderFreeModels);
+if (modelsRefresh) modelsRefresh.addEventListener("click", () => loadFreeModels(true));
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modelsModal && modelsModal.style.display !== "none") {
+        modelsModal.style.display = "none";
+    }
+});
+
+//* ============================================================
+//* Fish Audio voice browser / Каталог голосов Fish Audio
+//* ============================================================
+
+const browseVoicesBtn = document.getElementById("browse-voices-btn");
+const voicesModal     = document.getElementById("voices-modal");
+const voicesClose     = document.getElementById("voices-close");
+const voicesSearch    = document.getElementById("voices-search");
+const voicesLanguage  = document.getElementById("voices-language");
+const voicesRefresh   = document.getElementById("voices-refresh");
+const voicesStatus    = document.getElementById("voices-status");
+const voicesList      = document.getElementById("voices-list");
+const voicesLoadMore  = document.getElementById("voices-load-more");
+
+let browseVoicesItems  = [];
+let browseVoicesPage   = 1;
+let browseVoicesHasMore = false;
+let browseVoicesLoading = false;
+let voicesSearchTimer   = null;
+let previewVoiceAudio   = null;
+let previewVoiceId      = null;
+let previewVoiceBtn     = null;
+
+function openVoicesModal() {
+    voicesModal.style.display = "flex";
+    if (!browseVoicesItems.length) loadBrowseVoices(true);
+    else renderBrowseVoices();
+}
+
+function stopVoicePreview() {
+    if (previewVoiceAudio) {
+        previewVoiceAudio.pause();
+        previewVoiceAudio = null;
+    }
+    if (previewVoiceBtn) {
+        previewVoiceBtn.textContent = t.voices_preview || "Preview";
+        previewVoiceBtn.classList.remove("playing");
+    }
+    previewVoiceId = null;
+    previewVoiceBtn = null;
+}
+
+function isVoiceAdded(voiceId) {
+    return Array.from(voiceSelect.options).some(o => o.value === voiceId);
+}
+
+function compactNumber(n) {
+    try {
+        return new Intl.NumberFormat(UI_LOCALE, { notation: "compact", maximumFractionDigits: 1 }).format(n);
+    } catch {
+        return String(n);
+    }
+}
+
+async function loadBrowseVoices(reset) {
+    if (browseVoicesLoading) return;
+    if (reset) {
+        browseVoicesPage = 1;
+        browseVoicesItems = [];
+        stopVoicePreview();
+    }
+    browseVoicesLoading = true;
+    if (reset) {
+        voicesStatus.textContent = t.models_loading || "Loading...";
+        voicesStatus.className = "voice-msg";
+        voicesList.innerHTML = "";
+    }
+    voicesLoadMore.disabled = true;
+
+    try {
+        const params = new URLSearchParams({
+            page: String(browseVoicesPage),
+            per_page: "24",
+        });
+        const q = voicesSearch.value.trim();
+        const lang = voicesLanguage.value;
+        if (q) params.set("search", q);
+        if (lang) params.set("lang", lang);
+
+        const r = await fetch("/api/voices/browse?" + params.toString());
+        const data = await r.json();
+        if (!r.ok || !data.success) throw new Error(data.error || "HTTP " + r.status);
+
+        const known = new Set(browseVoicesItems.map(v => v.id));
+        for (const item of data.items || []) {
+            if (!known.has(item.id)) browseVoicesItems.push(item);
+        }
+        browseVoicesHasMore = !!data.has_more;
+        browseVoicesPage += 1;
+        voicesStatus.textContent = "";
+        voicesStatus.className = "voice-msg";
+        renderBrowseVoices();
+    } catch (err) {
+        voicesStatus.textContent = (t.voices_error || "Failed to load voices") + ": " + err.message;
+        voicesStatus.className = "voice-msg error";
+    } finally {
+        browseVoicesLoading = false;
+        voicesLoadMore.disabled = false;
+        updateVoicesLoadMore();
+    }
+}
+
+function updateVoicesLoadMore() {
+    if (!voicesLoadMore) return;
+    voicesLoadMore.style.display = browseVoicesHasMore ? "" : "none";
+    voicesLoadMore.textContent = t.voices_load_more || "Load more";
+    voicesLoadMore.disabled = browseVoicesLoading;
+}
+
+function playVoicePreview(item, btn) {
+    if (!item.preview_url) return;
+    if (previewVoiceId === item.id) {
+        stopVoicePreview();
+        return;
+    }
+    stopVoicePreview();
+
+    previewVoiceId = item.id;
+    previewVoiceBtn = btn;
+    previewVoiceAudio = new Audio("/api/voices/preview?url=" + encodeURIComponent(item.preview_url));
+    btn.textContent = t.voices_stop || "Stop";
+    btn.classList.add("playing");
+    previewVoiceAudio.onended = stopVoicePreview;
+    previewVoiceAudio.onerror = stopVoicePreview;
+    previewVoiceAudio.play().catch(stopVoicePreview);
+}
+
+function renderBrowseVoices() {
+    voicesList.innerHTML = "";
+    if (!browseVoicesItems.length) {
+        const empty = document.createElement("div");
+        empty.className = "models-empty";
+        empty.textContent = t.voices_empty || "No voices found";
+        voicesList.appendChild(empty);
+        return;
+    }
+
+    for (const item of browseVoicesItems) {
+        const card = document.createElement("div");
+        card.className = "voice-card";
+
+        const info = document.createElement("div");
+        info.className = "voice-card-info";
+
+        const nameRow = document.createElement("div");
+        nameRow.className = "voice-card-name-row";
+        const name = document.createElement("span");
+        name.className = "voice-card-name";
+        name.textContent = item.name;
+        nameRow.appendChild(name);
+
+        for (const lang of (item.languages || []).slice(0, 2)) {
+            const chip = document.createElement("span");
+            chip.className = "voice-lang-chip";
+            chip.textContent = String(lang).toUpperCase();
+            nameRow.appendChild(chip);
+        }
+        info.appendChild(nameRow);
+
+        const meta = document.createElement("div");
+        meta.className = "voice-card-meta";
+        if (item.like_count) {
+            const likes = document.createElement("span");
+            likes.textContent = "♥ " + compactNumber(item.like_count);
+            meta.appendChild(likes);
+        }
+        if (item.task_count) {
+            const uses = document.createElement("span");
+            uses.textContent = "▶ " + compactNumber(item.task_count);
+            meta.appendChild(uses);
+        }
+        if (item.description) {
+            const desc = document.createElement("span");
+            desc.className = "voice-card-desc";
+            desc.textContent = item.description;
+            meta.appendChild(desc);
+        }
+        info.appendChild(meta);
+
+        if (item.tags && item.tags.length) {
+            const tags = document.createElement("div");
+            tags.className = "voice-card-tags";
+            for (const tag of item.tags.slice(0, 4)) {
+                const chip = document.createElement("span");
+                chip.textContent = tag;
+                tags.appendChild(chip);
+            }
+            info.appendChild(tags);
+        }
+        card.appendChild(info);
+
+        const actions = document.createElement("div");
+        actions.className = "voice-card-actions";
+
+        const preview = document.createElement("button");
+        preview.className = "voice-preview-btn";
+        preview.textContent = t.voices_preview || "Preview";
+        preview.dataset.id = item.id;
+        preview.disabled = !item.preview_url;
+        preview.addEventListener("click", () => playVoicePreview(item, preview));
+        actions.appendChild(preview);
+
+        const add = document.createElement("button");
+        const added = isVoiceAdded(item.id);
+        add.className = "model-add-btn" + (added ? " added" : "");
+        add.textContent = added ? (t.models_added || "Added") : (t.models_add || "Add");
+        add.disabled = added;
+        add.addEventListener("click", () => addBrowseVoice(item, add));
+        actions.appendChild(add);
+
+        card.appendChild(actions);
+        voicesList.appendChild(card);
+    }
+}
+
+async function addBrowseVoice(item, btn) {
+    btn.disabled = true;
+    btn.textContent = t.models_adding || "Adding...";
+    try {
+        const r = await fetch("/api/voices/add", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                message: textMsg,
-                model: modelSelect.value,
-                voice: hadFiles ? "" : voiceSelect.value,
-                muted: hadFiles ? true : isMuted,
-                files: filesToSend,
+                name: item.name,
+                url: "https://fish.audio/voices/" + item.id + "/",
             }),
         });
-        const reader = r.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        //* Read SSE stream chunk by chunk / Читаем SSE-поток чанк за чанком
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split("\n\n");
-            buffer = parts.pop() || "";
-            for (const part of parts) {
-                if (!part.startsWith("data: ")) continue;
-                let data;
-                try { data = JSON.parse(part.slice(6)); } catch { continue; }
-                if (data.type === "token") {
-                    //* Regular AI response token / Обычный токен ответа ИИ
-                    fullText += data.content;
-                    botContent.innerHTML = formatMessage(fullText);
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                } else if (data.type === "model_switch") {
-                    //* Fallback model was used / Использована запасная модель
-                    fullText += "[" + data.content + "]\n";
-                    botContent.innerHTML = formatMessage(fullText);
-                } else if (data.type === "replace") {
-                    //* Full text replacement (e.g. after cleaning) / Полная замена текста (например после очистки)
-                    fullText = data.content;
-                    botContent.innerHTML = formatMessage(fullText);
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                } else if (data.type === "done") {
-                    //* Stream complete — grab audio or TTS error / Стрим завершён — забираем аудио или ошибку TTS
-                    audioB64 = data.audio || null;
-                    ttsError = data.tts_error || null;
-                } else if (data.type === "error") {
-                    //* Server-side error / Ошибка на сервере
-                    botContent.innerHTML = formatMessage("<span style='color:var(--danger)'>Error:</span> " + escapeHtml(data.content));
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                }
-            }
-        }
-        //* Normal: add audio replay button or TTS error / Обычный режим: кнопка повтора или ошибка TTS
-        if (audioB64) addAudioRow(botDiv, audioB64);
-        if (ttsError) addTtsErrorRow(botDiv, ttsError);
-        if (hadFiles && !audioB64) addSpeakButton(botDiv, fullText);
-        setStatus(t.status_ready || "Ready", "ready");
+        const data = await r.json();
+        if (!r.ok || !data.success) throw new Error(data.error || "Save failed");
+
+        rebuildVoiceSelect(data.voices);
+        voiceSelect.value = item.id;
+        btn.textContent = t.models_added || "Added";
+        btn.classList.add("added");
+        voicesStatus.textContent = t.voice_add_success || "Voice added!";
+        voicesStatus.className = "voice-msg success";
     } catch (err) {
-        botContent.innerHTML = formatMessage("<span style='color:var(--danger)'>" + (t.connection_error || "Connection error") + ":</span> " + escapeHtml(err.message));
-        setStatus(t.status_error || "Error", "error");
-    } finally {
-        isLoading = false;
-        sendBtn.disabled = !messageInput.value.trim();
+        btn.disabled = false;
+        btn.textContent = t.models_add || "Add";
+        voicesStatus.textContent = (t.voice_add_error || "Failed to add voice") + ": " + err.message;
+        voicesStatus.className = "voice-msg error";
     }
-};
-
-//* Re-attach click handler to the new sendMessage / Переподключаем обработчик клика к новой sendMessage
-sendBtn.addEventListener("click", sendMessage);
-
-//* Enable send button when files are added (even without text) / Включаем кнопку отправки, если есть файлы (даже без текста)
-function updateSendBtn() {
-    sendBtn.disabled = !(messageInput.value.trim() || uploadedFilesData.length > 0);
 }
-messageInput.addEventListener("input", updateSendBtn);
-//* Override renderUploadedFiles to also update send button state / Переопределяем renderUploadedFiles для обновления кнопки
-const __origRender = renderUploadedFiles;
-renderUploadedFiles = function() {
-    __origRender();
-    updateSendBtn();
-};
 
-//* Drag & drop overlay — shows big + when files are dragged over the page
-//* Drag & drop оверлей — показывает большой + при перетаскивании файлов на страницу
-let dragCtr = 0;
-//* Increment counter on dragenter to handle nested elements / Увеличиваем счётчик при dragenter для вложенных элементов
-document.addEventListener("dragenter", (e) => {
-    e.preventDefault();
-    dragCtr++;
-    if (dragCtr === 1) dropZone.style.display = "flex";
+if (browseVoicesBtn) browseVoicesBtn.addEventListener("click", openVoicesModal);
+if (voicesClose) voicesClose.addEventListener("click", () => { stopVoicePreview(); voicesModal.style.display = "none"; });
+if (voicesModal) voicesModal.addEventListener("click", (e) => {
+    if (e.target === voicesModal) { stopVoicePreview(); voicesModal.style.display = "none"; }
 });
+if (voicesSearch) voicesSearch.addEventListener("input", () => {
+    clearTimeout(voicesSearchTimer);
+    voicesSearchTimer = setTimeout(() => loadBrowseVoices(true), 350);
+});
+if (voicesLanguage) voicesLanguage.addEventListener("change", () => loadBrowseVoices(true));
+if (voicesRefresh) voicesRefresh.addEventListener("click", () => loadBrowseVoices(true));
+if (voicesLoadMore) voicesLoadMore.addEventListener("click", () => loadBrowseVoices(false));
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && voicesModal && voicesModal.style.display !== "none") {
+        stopVoicePreview();
+        voicesModal.style.display = "none";
+    }
+});
+
+//* File uploads are temporarily disabled — block browser drop navigation
+//* Загрузка файлов временно отключена — блокируем переход при перетаскивании
 document.addEventListener("dragover", (e) => e.preventDefault());
-//* Decrement on dragleave — hide when truly left / Уменьшаем при dragleave — прячем когда реально ушли
-document.addEventListener("dragleave", (e) => {
-    e.preventDefault();
-    dragCtr--;
-    if (dragCtr <= 0) { dragCtr = 0; dropZone.style.display = "none"; }
-});
-//* On drop — hide overlay and process files / При сбросе — прячем оверлей и обрабатываем файлы
-document.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dragCtr = 0;
-    dropZone.style.display = "none";
-    if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
-});
+document.addEventListener("drop", (e) => e.preventDefault());
 
 //* ============================================================
 //* Mic toggle — click to start recording, click again to stop & send
@@ -1393,8 +1328,7 @@ let recChunks = [];
 //* Map the app language to an ISO 639-1 code for the STT server
 //* Сопоставляем язык приложения с кодом ISO 639-1 для STT-сервера
 function micLangCode() {
-    const map = { ru: "ru-RU", en: "en-US", de: "de-DE", fr: "fr-FR", sr: "sr-RS" };
-    return map[CURRENT_LANG] || "en-US";
+    return LOCALE_BY_LANG[CURRENT_LANG] || "en-US";
 }
 
 function micMsg(text, type) {
@@ -1979,3 +1913,32 @@ if (handToggle) {
 
 //* Always stop the camera when leaving the page / Останавливаем камеру при уходе со страницы
 window.addEventListener("beforeunload", stopHandAssistant);
+
+const appSidebar = document.getElementById("app-sidebar");
+const sidebarToggle = document.getElementById("sidebar-toggle");
+const sidebarClose = document.getElementById("sidebar-close");
+const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+const modelBadge = document.getElementById("model-badge");
+
+function setSidebarOpen(open) {
+    document.body.classList.toggle("sidebar-open", open);
+}
+
+if (sidebarToggle) sidebarToggle.addEventListener("click", () => setSidebarOpen(true));
+if (sidebarClose) sidebarClose.addEventListener("click", () => setSidebarOpen(false));
+if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", () => setSidebarOpen(false));
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setSidebarOpen(false);
+});
+
+function syncModelBadge() {
+    if (!modelBadge || !modelSelect || !modelSelect.selectedOptions.length) return;
+    const option = modelSelect.selectedOptions[0];
+    modelBadge.textContent = (option.textContent || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+}
+
+if (modelSelect) {
+    modelSelect.addEventListener("change", syncModelBadge);
+    new MutationObserver(syncModelBadge).observe(modelSelect, { childList: true });
+    syncModelBadge();
+}
