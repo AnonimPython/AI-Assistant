@@ -75,7 +75,7 @@ def test_hf(model_id, name):
     print(f"  {name}... ", end="", flush=True)
     try:
         r = requests.post(
-            f"https://api-inference.huggingface.co/models/{model_id}",
+            f"https://router.huggingface.co/hf-inference/models/{model_id}",
             headers={"Authorization": f"Bearer {HF_KEY}", "Content-Type": "application/json"},
             json={
                 "inputs": f"<|system|>\n{SYSTEM_PROMPT}\n<|user|>\n{TEST_MSG}\n<|assistant|>\n",
@@ -128,9 +128,16 @@ def main():
             print(f"    [OK] {m['name']}")
 
     if broken:
-        print("\n  Broken (will be commented out):")
+        print("\n  Broken:")
         for m in broken:
             print(f"    [--] {m['name']}")
+
+    #? Only touch source code when explicitly requested with --fix
+    #? Меняем исходники только по явному флагу --fix
+    if "--fix" not in sys.argv:
+        print("\n  Config not modified. Run with --fix to comment out broken models.")
+        print("=" * 60 + "\n")
+        return
 
     #! Updates config_manager.py — comments out broken models
     #! Обновляет config_manager.py — комментирует неработающие модели

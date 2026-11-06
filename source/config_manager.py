@@ -3,6 +3,8 @@
 import json
 import os
 import platform
+import tempfile
+import threading
 import time
 import sys
 
@@ -131,9 +133,27 @@ SYSTEM_PROMPT = (
 def get_links():
     return {
         "openrouter": "https://openrouter.ai/keys",
-        "fishaudio": "https://fish.audio/",
+        "fishaudio": "https://fish.audio/app/developers/",
         "huggingface": "https://huggingface.co/settings/tokens",
     }
+
+
+#* Writes JSON atomically (temp file + replace) to avoid corrupting data on crash
+#* Атомарно пишет JSON (временный файл + replace), чтобы не повредить данные
+def _atomic_write_json(path, data, ensure_ascii=False):
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=ensure_ascii)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 class ConfigManager:
@@ -144,6 +164,9 @@ class ConfigManager:
     #* Инициализирует конфиг и загружает данные из файла
     def __init__(self):
         self._data = {}
+        #? Re-entrant lock protects config/history/voices from concurrent writes
+        #? Реентрантный лок защищает конфиг/историю/голоса от гонок записи
+        self._lock = threading.RLock()
 
         self.load()
 
@@ -183,18 +206,18 @@ class ConfigManager:
     def save(self, or_key="", fish_key="", hf_key=""):
         #* Saves API keys to config file
         #* Сохраняет API ключи в файл конфигурации
-        self.ensure_dir()
-        # Store non-empty keys only / Сохраняем только непустые ключи
-        if or_key:
-            self._data["or_key"] = or_key.strip()
-        if fish_key:
-            self._data["fish_key"] = fish_key.strip()
-        if hf_key:
-            self._data["hf_key"] = hf_key.strip()
+        with self._lock:
+            self.ensure_dir()
+            # Store non-empty keys only / Сохраняем только непустые ключи
+            if or_key:
+                self._data["or_key"] = or_key.strip()
+            if fish_key:
+                self._data["fish_key"] = fish_key.strip()
+            if hf_key:
+                self._data["hf_key"] = hf_key.strip()
 
-        self._data["configured"] = True
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(self._data, f, indent=2)
+            self._data["configured"] = True
+            self._save_config()
 
 
     #* Checks if the app has been configured with API keys
@@ -224,10 +247,9 @@ class ConfigManager:
     #* Устанавливает лимит истории чата (ограничение от 1 до 50)
     def set_history_limit(self, n):
         # Clamp between 1 and 50 / Ограничение от 1 до 50
-        self._data["history_limit"] = max(1, min(int(n), 50))
-        self.ensure_dir()
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(self._data, f, indent=2)
+        with self._lock:
+            self._data["history_limit"] = max(1, min(int(n), 50))
+            self._save_config()
 
     #* Returns the HuggingFace API key
     #* Возвращает API ключ HuggingFace
@@ -262,32 +284,40 @@ class ConfigManager:
         return self._data.get("custom_models", [])
 
 
-    def add_custom_model(self, model_id):
+    def add_custom_model(self, model_id, name=None):
         #* Adds a model ID to the custom models list and persists
-        #* Добавляет ID модели в список кастомных моделей и сохраняет
-        models = self.get_custom_models()
-        #* Avoid duplicates / Избегаем дубликатов
-        if any(m["id"] == model_id for m in models):
+        #* Добавляет ID модели в список кастомных и сохраняет
+        model_id = (model_id or "").strip()
+        if not model_id:
             return False
-        #* Extract display name: last segment after / or : — e.g. "hy3:free" from "tencent/hy3:free"
-        #* Извлекаем отображаемое имя: последний сегмент после / или : — например "hy3:free" из "tencent/hy3:free"
-        display = model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id
-        models.append({
-            "provider": "openrouter",
-            "id": model_id,
-            "name": display,
-        })
-        self._data["custom_models"] = models
-        self._save_config()
+        #* Prefer a human-readable name from the browse list; otherwise derive
+        #* it from the last segment: "hy3:free" from "tencent/hy3:free".
+        #* Предпочитаем человекочитаемое имя из списка; иначе берём последний
+        #* сегмент: "hy3:free" из "tencent/hy3:free".
+        display = (name or "").strip() or (
+            model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id
+        )
+        with self._lock:
+            if any(m["id"] == model_id for m in self.get_models()):
+                return False
+            models = self.get_custom_models()
+            models.append({
+                "provider": "openrouter",
+                "id": model_id,
+                "name": display,
+            })
+            self._data["custom_models"] = models
+            self._save_config()
         return True
 
 
     def remove_custom_model(self, model_id):
         #* Removes a model ID from the custom models list and persists
-        #* Удаляет ID модели из списка кастомных моделей и сохраняет
-        models = self.get_custom_models()
-        self._data["custom_models"] = [m for m in models if m["id"] != model_id]
-        self._save_config()
+        #* Удаляет ID модели из списка кастомных и сохраняет
+        with self._lock:
+            models = self.get_custom_models()
+            self._data["custom_models"] = [m for m in models if m["id"] != model_id]
+            self._save_config()
 
 
     def get_voices(self):
@@ -335,40 +365,43 @@ class ConfigManager:
     def add_custom_voice(self, name, voice_id):
         #* Saves a new user-added voice
         #* Сохраняет новый голос, добавленный пользователем
-        self.ensure_dir()
-        voices = self.get_custom_voices()
-        #? Avoid duplicates by voice_id
-        #? Избегаем дубликатов по voice_id
-        for i, (n, vid) in enumerate(voices):  # Scan existing voices; replace entry if ID matches / Сканируем; заменяем если ID совпадает
-            if vid == voice_id:
-                voices[i] = [name, voice_id]
-                break
-        else:
-            voices.append([name, voice_id])
-        with open(CUSTOM_VOICES_FILE, "w", encoding="utf-8") as f:
-            json.dump(voices, f, indent=2, ensure_ascii=False)
+        with self._lock:
+            self.ensure_dir()
+            voices = self.get_custom_voices()
+            #? Avoid duplicates by voice_id
+            #? Избегаем дубликатов по voice_id
+            for i, (n, vid) in enumerate(voices):  # Scan existing voices; replace entry if ID matches / Сканируем; заменяем если ID совпадает
+                if vid == voice_id:
+                    voices[i] = [name, voice_id]
+                    break
+            else:
+                voices.append([name, voice_id])
+            _atomic_write_json(CUSTOM_VOICES_FILE, voices)
 
 
     #* Deletes a user-added voice by its ID
     #* Удаляет добавленный пользователем голос по ID
     def remove_custom_voice(self, voice_id):
-        voices = self.get_custom_voices()
-        voices = [v for v in voices if v[1] != voice_id]
-        self.ensure_dir()
-        with open(CUSTOM_VOICES_FILE, "w", encoding="utf-8") as f:
-            json.dump(voices, f, indent=2, ensure_ascii=False)
+        with self._lock:
+            self.ensure_dir()
+            voices = self.get_custom_voices()
+            voices = [v for v in voices if v[1] != voice_id]
+            _atomic_write_json(CUSTOM_VOICES_FILE, voices)
 
 
     def get_lang(self):
         #* Returns current language code, default "ru"
         #* Возвращает текущий код языка, по умолчанию "ru"
-        return self._data.get("lang", "ru")
+        lang = self._data.get("lang", "ru")
+        #* Fall back safely if an old/unsupported language code is stored
+        #* Безопасно откатываемся, если сохранён старый/неподдерживаемый код
+        return lang if lang in ("en", "de", "fr", "pt", "ru") else "ru"
 
 
     def set_lang(self, lang):
         #* Saves language preference to config
         #* Сохраняет выбранный язык в конфиг
-        if lang in ("en", "de", "fr", "sr", "ru"):
+        if lang in ("en", "de", "fr", "pt", "ru"):
             self._data["lang"] = lang
             self._save_config()
 
@@ -407,9 +440,9 @@ class ConfigManager:
     def _save_config(self):
         #* Writes current config to file
         #* Записывает текущую конфигурацию в файл
-        self.ensure_dir()
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(self._data, f, indent=2)
+        with self._lock:
+            self.ensure_dir()
+            _atomic_write_json(CONFIG_FILE, self._data, ensure_ascii=False)
 
 
 
@@ -429,35 +462,38 @@ class ConfigManager:
     def save_history(self, messages):
         #* Saves chat messages to history.json
         #* Сохраняет сообщения чата в history.json
-        self.ensure_dir()
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(messages, f, indent=2, ensure_ascii=False)
+        with self._lock:
+            self.ensure_dir()
+            _atomic_write_json(HISTORY_FILE, messages)
 
 
     def add_to_history(self, role, content):
-        #* Appends a single message to history
-        #* Добавляет одно сообщение в историю
-        history = self.get_history()
-        history.append({
-            "role": role,
-            "content": content,
-            "timestamp": time.time()
-        })
-        self.save_history(history)
+        #* Appends a single message to history (read-modify-write under lock)
+        #* Добавляет одно сообщение в историю (чтение-изменение-запись под локом)
+        with self._lock:
+            history = self.get_history()
+            history.append({
+                "role": role,
+                "content": content,
+                "timestamp": time.time()
+            })
+            self.save_history(history)
 
 
 
     #! Deletes all chat history
     #! Удаляет всю историю чата
     def clear_history(self):
-        if os.path.exists(HISTORY_FILE):
-            os.remove(HISTORY_FILE)
+        with self._lock:
+            if os.path.exists(HISTORY_FILE):
+                os.remove(HISTORY_FILE)
 
 
 
     #! WARNING: Deletes the config file and resets all settings
     #! ВНИМАНИЕ: Удаляет файл конфигурации и сбрасывает все настройки
     def reset(self):
-        if os.path.exists(CONFIG_FILE):
-            os.remove(CONFIG_FILE)
-        self._data = {}
+        with self._lock:
+            if os.path.exists(CONFIG_FILE):
+                os.remove(CONFIG_FILE)
+            self._data = {}

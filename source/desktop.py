@@ -2,7 +2,9 @@
 #* Обёртка десктопного приложения с использованием pywebview
 
 #? stdlib
+import socket
 import threading
+import time
 import sys
 import os
 
@@ -43,6 +45,19 @@ def start_flask():
     app.run(host="127.0.0.1", port=5066, debug=False, use_reloader=False)
 
 
+#* Blocks until the local Flask server accepts connections (or times out)
+#* Ждёт, пока локальный Flask-сервер начнёт принимать соединения (или таймаут)
+def wait_for_server(host="127.0.0.1", port=5066, timeout=20.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.1)
+    return False
+
+
 #* Returns path to app icon based on platform
 #* Возвращает путь к иконке приложения в зависимости от платформы
 def get_icon_path():
@@ -77,6 +92,9 @@ def main():
     #? daemon thread = automatically killed when the main thread exits
     flask_thread = threading.Thread(target=start_flask, daemon=True)
     flask_thread.start()
+    #? Wait for the backend so the window never loads a dead URL
+    #? Ждём бэкенд, чтобы окно не открывало неработающий адрес
+    wait_for_server()
 
 
     #? pywebview opens a chromeless OS window pointed at the local dev server

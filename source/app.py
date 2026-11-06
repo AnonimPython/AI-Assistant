@@ -17,8 +17,14 @@ import docx
 import time
 import threading
 import concurrent.futures
+import ipaddress
+import socket
+import datetime
+import secrets
+import hashlib
+from urllib.parse import urlparse, urlencode
 
-from config_manager import ConfigManager, get_links
+from config_manager import ConfigManager, get_links, SYSTEM_PROMPT
 from translations import T
 from desktop_actions import execute_command
 app  = Flask(__name__)
@@ -47,7 +53,13 @@ COMMANDS_DOC = (
 def _system_prompt():
     #* Returns the user system prompt plus the desktop-commands documentation
     #* Возвращает системный промпт пользователя плюс документацию команд ПК
-    return config.get_system_prompt() + COMMANDS_DOC
+    prompt = config.get_system_prompt()
+    #* When the user has not customized the prompt, use the UI language default
+    #* Если пользователь не менял промпт, берём вариант на языке интерфейса
+    if prompt == SYSTEM_PROMPT:
+        lang = config.get_lang()
+        prompt = T.get(lang, T["en"]).get("system_prompt_default", prompt)
+    return prompt + COMMANDS_DOC
 
 
 #* Regex for command tokens: ⟦kind:value⟧ or ⟦kind⟧
@@ -83,8 +95,11 @@ def _execute_commands(text):
             ok, detail = False, str(ex)[:80]
         return " " + _cmd_msg(kind, ok, detail) + " "
     text = CMD_RE.sub(repl, text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    #? Collapse horizontal whitespace only, keep paragraph breaks intact
+    #? Схлопываем только горизонтальные пробелы, сохраняя переносы строк
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 #* Extract text from attached files (PDF, DOCX, TXT) / Извлекает текст из прикреплённых файлов
 #* Возвращает список строк вида "Attached file 'name':\n```\ntext\n```"
@@ -113,11 +128,24 @@ def extract_files_text(files):
     return parts
 
 
-VERSION     = "1.0"
+VERSION     = "2.0.0"
+
+OPENROUTER_AUTH_URL = "https://openrouter.ai/auth"
+OPENROUTER_KEYS_URL = "https://openrouter.ai/api/v1/auth/keys"
+_oauth_pending = {}
 REPO_OWNER  = "AnonimPython"
 REPO_NAME   = "AI-Assistant"
 GITHUB_API  = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
 
+
+#* Parses a version string into a padded comparable tuple, e.g. "1.2.3" → (1, 2, 3, 0)
+#* Парсит версию в дополненный сравнимый кортеж, напр. "1.2.3" → (1, 2, 3, 0)
+def _parse_version(v):
+    parts = re.split(r"[._-]", (v or "").lstrip("v"))
+    nums = tuple(int(p) for p in parts if p.isdigit()) or (0,)
+    #* Pad to 4 components so "1.0" and "1.0.0" compare as equal
+    #* Дополняем до 4 компонентов, чтобы "1.0" и "1.0.0" были равны
+    return nums + (0,) * max(0, 4 - len(nums))
 
 
 def t(key):
@@ -254,8 +282,8 @@ def _call_openrouter_stream(model_id, message, history=None):
 #! Calls HuggingFace Inference API — may return 503 while model loads
 #! Вызов HuggingFace Inference API — может вернуть 503 пока модель загружается
 def _call_huggingface(model_id, message, history=None):
-    hf_token    = config.get_hf_key()
-    api_url = f"https://api-inference.huggingface.co/models/{model_id}"
+    hf_token = config.get_hf_key()
+    api_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
 
     limit = config.get_history_limit()
     sp = _system_prompt()
@@ -380,6 +408,62 @@ def _call_tts(text, voice_id):
 
 
 
+#* Starts OpenRouter OAuth PKCE and redirects the user to the provider
+#* Запускает OpenRouter OAuth PKCE и перенаправляет пользователя к провайдеру
+@app.route("/api/oauth/openrouter/start")
+def api_oauth_openrouter_start():
+    now = time.time()
+    for key, pending in list(_oauth_pending.items()):
+        if now - pending.get("created", 0) > 900:
+            _oauth_pending.pop(key, None)
+
+    verifier = secrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode("ascii")).digest()
+    ).decode("ascii").rstrip("=")
+    state = secrets.token_urlsafe(18)
+    _oauth_pending[state] = {"verifier": verifier, "created": now}
+
+    params = {
+        "callback_url": url_for("api_oauth_openrouter_callback", _external=True),
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "state": state,
+        "key_label": "AI Assistant",
+    }
+    return redirect(OPENROUTER_AUTH_URL + "?" + urlencode(params))
+
+
+#* Receives OpenRouter OAuth code, exchanges it for a key, and starts the app
+#* Принимает OAuth-код OpenRouter, обменивает на ключ и запускает приложение
+@app.route("/api/oauth/openrouter/callback")
+def api_oauth_openrouter_callback():
+    code = (request.args.get("code") or "").strip()
+    state = (request.args.get("state") or "").strip()
+    pending = _oauth_pending.pop(state, None)
+    if not code or not pending:
+        return redirect(url_for("setup", oauth="error"))
+
+    try:
+        resp = requests.post(
+            OPENROUTER_KEYS_URL,
+            json={
+                "code": code,
+                "code_verifier": pending["verifier"],
+                "code_challenge_method": "S256",
+            },
+            timeout=25,
+        )
+        resp.raise_for_status()
+        key = (resp.json().get("key") or "").strip()
+        if not key:
+            raise ValueError("OpenRouter returned no key")
+        config.save(or_key=key)
+        return redirect(url_for("index"))
+    except Exception:
+        return redirect(url_for("setup", oauth="error"))
+
+
 #* Main chat page — shows model/voice selectors
 #* Главная страница чата — показывает выбор модели/голоса
 @app.route("/")
@@ -394,6 +478,7 @@ def index():
                            links=get_links(),
                            lang=lang,
                            theme=theme,
+                           version=VERSION,
                            t=T[lang],
                            cache_bust=str(int(time.time())))
 
@@ -405,8 +490,25 @@ def index():
 def setup():
     if config.is_configured():
         return redirect(url_for("index"))
-    return render_template("setup.html", links=get_links())
+    return render_template("setup.html", links=get_links(),
+                           lang=config.get_lang(), theme=config.get_theme(),
+                           oauth_error=request.args.get("oauth") == "error")
 
+
+
+#* Hides a secret, keeping only the last 4 characters for identification
+#* Скрывает секрет, оставляя только последние 4 символа для идентификации
+def _mask_key(value):
+    value = (value or "").strip()
+    if not value:
+        return ""
+    return "••••••••" + value[-4:]
+
+
+def _is_masked(value):
+    #* True when the client sent back the masked placeholder unchanged
+    #* True, если клиент вернул неизменённую маску вместо ключа
+    return (value or "").strip().startswith("••••")
 
 
 #* Returns current config (keys masked for display)
@@ -414,9 +516,12 @@ def setup():
 @app.route("/api/config", methods=["GET"])
 def api_get_config():
     keys = {
-        "or_key":        config.get_or_key(),
-        "fish_key":      config.get_fish_key(),
-        "hf_key":        config.get_hf_key(),
+        "or_key":        _mask_key(config.get_or_key()),
+        "fish_key":      _mask_key(config.get_fish_key()),
+        "hf_key":        _mask_key(config.get_hf_key()),
+        "or_key_set":    bool(config.get_or_key()),
+        "fish_key_set":  bool(config.get_fish_key()),
+        "hf_key_set":    bool(config.get_hf_key()),
         "history_limit": config.get_history_limit(),
         "system_prompt": config.get_system_prompt(),
         "check_updates": config.get_check_updates(),
@@ -424,21 +529,30 @@ def api_get_config():
     return jsonify(keys)
 
 
-#! Saves all three API keys to config file
-#! Сохраняет все три API ключа в файл конфигурации
+#! Saves API keys to config file. Masked/empty values keep the stored key,
+#! so the user can update a single key without re-entering the others.
+#! Сохраняет API ключи. Маскированные/пустые значения сохраняют текущий
+#! ключ, поэтому можно обновить один ключ, не вводя остальные.
 @app.route("/api/save-config", methods=["POST"])
 def api_save_config():
-    data = request.json
-    or_key    = data.get("or_key", "").strip()
-    fish_key  = data.get("fish_key", "").strip()
-    hf_key    = data.get("hf_key", "").strip()
-    lang      = data.get("lang", "").strip()
+    data = request.json or {}
+    lang = (data.get("lang") or "").strip()
 
-    if not or_key or not fish_key or not hf_key:
-        return jsonify({"success": False, "error": "All three keys are required"})
+    resolved = {}
+    existing = {
+        "or_key":   config.get_or_key(),
+        "fish_key": config.get_fish_key(),
+        "hf_key":   config.get_hf_key(),
+    }
+    for name in ("or_key", "fish_key", "hf_key"):
+        value = (data.get(name) or "").strip()
+        resolved[name] = existing[name] if (not value or _is_masked(value)) else value
 
-    config.save(or_key, fish_key, hf_key)
-    if lang in ("en", "de", "fr", "sr", "ru"):
+    if not resolved["or_key"]:
+        return jsonify({"success": False, "error": "OpenRouter key is required"})
+
+    config.save(resolved["or_key"], resolved["fish_key"], resolved["hf_key"])
+    if lang in ("en", "de", "fr", "pt", "ru"):
         config.set_lang(lang)
     return jsonify({"success": True})
 
@@ -654,6 +768,10 @@ def api_chat_stream():
                     except Exception as ex:
                         last_error = str(ex)
                         reply = ""
+                        if tokens_yielded:
+                            #? Clear partially streamed output before trying the next model
+                            #? Очищаем частично выведенный ответ перед следующей моделью
+                            yield f"data: {json.dumps({'type': 'replace', 'content': ''})}\n\n"
                         continue
                 else:
                     #? HuggingFace fallback (non-streaming)
@@ -854,7 +972,7 @@ def api_get_lang():
 def api_set_lang():
     data = request.json
     lang = data.get("lang", "")
-    if lang in ("en", "de", "fr", "sr", "ru"):
+    if lang in ("en", "de", "fr", "pt", "ru"):
         config.set_lang(lang)
         return jsonify({"success": True, "lang": lang})
     return jsonify({"success": False, "error": "Invalid language"}), 400
@@ -936,24 +1054,30 @@ def api_agents_list():
 #* Добавить модель по URL — извлекает ID модели и добавляет в список кастомных
 @app.route("/api/agents/add", methods=["POST"])
 def api_agents_add():
-    data = request.json
+    data = request.json or {}
     url = (data.get("url") or "").strip()
-    if not url:
-        return jsonify({"success": False, "error": "url required"}), 400
+    model_id = (data.get("model_id") or "").strip()
+    name = (data.get("name") or "").strip()
 
-    from urllib.parse import urlparse
-    parsed = urlparse(url)
-    path = parsed.path.strip("/")
-    model_id = path if path else parsed.netloc.replace("www.", "")
+    if not model_id:
+        if not url:
+            return jsonify({"success": False, "error": "url required"}), 400
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
+        model_id = path if path else parsed.netloc.replace("www.", "")
 
-    added = config.add_custom_model(model_id)
+    if not model_id:
+        return jsonify({"success": False, "error": "model_id required"}), 400
+
+    added = config.add_custom_model(model_id, name or None)
+    display = name or (model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id)
     return jsonify({
         "success": True,
         "added": added,
         "model": {
             "provider": "openrouter",
             "id": model_id,
-            "name": model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id,
+            "name": display,
         }
     })
 
@@ -973,6 +1097,232 @@ def api_agents_remove():
     return jsonify({"success": True})
 
 
+#* Free text models catalogue — cached for a few minutes to spare OpenRouter
+#* Каталог бесплатных текстовых моделей — кэшируется на несколько минут
+OPENROUTER_MODELS_API   = "https://openrouter.ai/api/v1/models"
+OPENROUTER_FREE_URL     = "https://openrouter.ai/models?max_price=0&max_output_price=0&output_modalities=text"
+_MODELS_TTL             = 600
+_models_cache           = {"ts": 0.0, "items": [], "source": ""}
+_models_cache_lock      = threading.Lock()
+
+
+def _is_zero_price(value):
+    #* OpenRouter returns prices as strings like "0" or "0.000001"
+    #* OpenRouter отдаёт цены строками вида "0" или "0.000001"
+    try:
+        return float(value) == 0.0
+    except (TypeError, ValueError):
+        return False
+
+
+def _fetch_free_models_api():
+    #* Primary source: the public models API (same data as the website)
+    #* Основной источник: публичный API моделей (те же данные, что на сайте)
+    resp = requests.get(OPENROUTER_MODELS_API, timeout=25)
+    resp.raise_for_status()
+    payload = resp.json()
+
+    items = []
+    for model in payload.get("data", []):
+        pricing = model.get("pricing") or {}
+        if not (_is_zero_price(pricing.get("prompt")) and
+                _is_zero_price(pricing.get("completion"))):
+            continue
+        arch = model.get("architecture") or {}
+        if "text" not in (arch.get("output_modalities") or []):
+            continue
+
+        model_id = (model.get("id") or "").strip()
+        if not model_id:
+            continue
+        full_name = re.sub(r"\s+", " ", model.get("name") or model_id).strip()
+        short_name = full_name.split(":", 1)[1].strip() if ":" in full_name else full_name
+        author = full_name.split(":", 1)[0].strip() if ":" in full_name else model_id.split("/")[0]
+
+        items.append({
+            "id":               model_id,
+            "name":             short_name or full_name,
+            "full_name":        full_name,
+            "author":           author,
+            "knowledge_cutoff": model.get("knowledge_cutoff") or None,
+            "created":          model.get("created"),
+            "context_length":   model.get("context_length"),
+            "description":      (model.get("description") or "").strip(),
+            "url":              f"https://openrouter.ai/{model_id}",
+        })
+    if not items:
+        raise ValueError("API returned no free text models")
+    return items
+
+
+#* Parses dates shown on model cards like "Nov 4, 2026" into a Unix timestamp
+#* Парсит даты с карточек вида "Nov 4, 2026" в Unix-время
+def _parse_card_date(text):
+    match = re.search(r"([A-Za-z]{3})[a-z]*\s+\d{1,2},\s+\d{4}", text or "")
+    if not match:
+        return None
+    raw = re.search(r"[A-Za-z]{3}[a-z]*\s+\d{1,2},\s+\d{4}", text).group(0)
+    for fmt in ("%b %d, %Y", "%B %d, %Y"):
+        try:
+            return int(datetime.datetime.strptime(raw, fmt).timestamp())
+        except ValueError:
+            continue
+    return None
+
+
+#* Parses "1.05M" / "65k" context sizes into an integer token count
+#* Парсит размер контекста "1.05M" / "65k" в целое число токенов
+def _parse_context_len(text):
+    match = re.search(r"([\d.]+)\s*([KkMmBb])\s+context", text or "")
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return None
+    return int(value * {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}[match.group(2).lower()])
+
+
+def _fetch_free_models_html():
+    #* Fallback: parse the OpenRouter models page markup on the user's machine
+    #* Резерв: парсим разметку страницы моделей OpenRouter на машине пользователя
+    from bs4 import BeautifulSoup
+
+    resp = requests.get(
+        OPENROUTER_FREE_URL,
+        timeout=25,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; AI-Assistant/1.0)"},
+    )
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    items = {}
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"]
+        if not re.fullmatch(r"/[^/?#]+/[^/?#]+", href):
+            continue
+
+        #* A real model card always contains a "Copy: <model-id>" button
+        #* Настоящая карточка модели всегда содержит кнопку "Copy: <model-id>"
+        card = None
+        model_id = href.strip("/")
+        node = anchor
+        for _ in range(4):
+            node = node.parent
+            if node is None:
+                break
+            copy_el = node.find(attrs={"title": re.compile(r"^Copy:\s*")})
+            if copy_el and copy_el.get("title"):
+                model_id = copy_el["title"].split(":", 1)[1].strip() or model_id
+                card = node
+                break
+        if card is None or not model_id or model_id in items:
+            continue
+
+        card_text = re.sub(r"\s+", " ", card.get_text(" ", strip=True))
+        #* Keep only models whose input AND output tokens are free
+        #* Оставляем только модели с бесплатными входными И выходными токенами
+        free_in = re.search(r"\$0(?:\.0+)?\s*/\s*M\s+input tokens", card_text, re.I)
+        free_out = re.search(r"\$0(?:\.0+)?\s*/\s*M\s+output tokens", card_text, re.I)
+        if not (free_in and free_out):
+            continue
+
+        name_span = anchor.find("span", class_=lambda c: c and "font-semibold" in c)
+        full_name = ""
+        if name_span:
+            first = name_span.find("span")
+            full_name = (first.get_text(" ", strip=True) if first
+                         else name_span.get_text(" ", strip=True)).strip()
+        full_name = re.sub(r"\s+", " ", full_name or anchor.get("aria-label", "") or
+                           anchor.get_text(" ", strip=True)).strip()
+        short_name = full_name.split(":", 1)[1].strip() if ":" in full_name else full_name
+        author = model_id.split("/")[0]
+
+        items[model_id] = {
+            "id":               model_id,
+            "name":             short_name or full_name,
+            "full_name":        full_name,
+            "author":           author,
+            "knowledge_cutoff": None,
+            "created":          _parse_card_date(card_text),
+            "context_length":   _parse_context_len(card_text),
+            "description":      "",
+            "url":              f"https://openrouter.ai/{model_id}",
+        }
+    if not items:
+        raise ValueError("Could not parse any models from the page")
+    return list(items.values())
+
+
+def _get_free_models(force=False):
+    #* Returns cached catalogue; refreshes from API, then HTML fallback
+    #* Возвращает кэш; обновляет через API, при ошибке — через HTML
+    now = time.time()
+    with _models_cache_lock:
+        if not force and _models_cache["items"] and now - _models_cache["ts"] < _MODELS_TTL:
+            return _models_cache["items"], _models_cache["source"]
+
+    try:
+        items = _fetch_free_models_api()
+        source = "api"
+    except Exception:
+        items = _fetch_free_models_html()
+        source = "html"
+
+    items.sort(key=lambda m: m.get("created") or 0, reverse=True)
+    with _models_cache_lock:
+        _models_cache.update(ts=now, items=items, source=source)
+    return items, source
+
+
+#* Browse free OpenRouter models — one-click add from the UI
+#* Просмотр бесплатных моделей OpenRouter — добавление в один клик из UI
+@app.route("/api/models/browse", methods=["GET"])
+def api_models_browse():
+    force = request.args.get("refresh") in ("1", "true", "yes")
+    try:
+        items, source = _get_free_models(force=force)
+    except Exception as ex:
+        return jsonify({"success": False, "error": str(ex)[:200]}), 502
+
+    added_ids = {m["id"] for m in config.get_models()}
+    result = [{**item, "added": item["id"] in added_ids} for item in items]
+    return jsonify({
+        "success": True,
+        "items":   result,
+        "total":   len(result),
+        "source":  source,
+    })
+
+
+#* Rejects URLs that resolve to loopback/private/link-local addresses (SSRF guard)
+#* Отклоняет URL, ведущие на loopback/private/link-local адреса (защита от SSRF)
+def _is_public_http_url(url):
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        return False
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, port, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False
+    for info in infos:
+        try:
+            addr = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (addr.is_private or addr.is_loopback or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+            return False
+    return True
+
+
 #* Proxy for voice preview audio — forwards MP3 to avoid CORS
 #* Прокси для аудио-превью — передаёт MP3, обходя CORS
 @app.route("/api/voices/preview")
@@ -980,6 +1330,8 @@ def api_voices_preview():
     url = request.args.get("url", "")
     if not url:
         return "Missing url", 400
+    if not _is_public_http_url(url):
+        return "Forbidden url", 403
     try:
         resp = requests.get(url, timeout=15, stream=True)
         resp.raise_for_status()
@@ -1111,13 +1463,7 @@ def api_check_update():
         url    = data.get("zipball_url") or ""
         notes  = data.get("body", "")
 
-        #* Parse version string into comparable tuple, e.g. "1.2.3" → (1,2,3)
-        #* Парсит версию в кортеж для сравнения, напр. "1.2.3" → (1,2,3)
-        def _parse(v):
-            parts = re.split(r"[._-]", v)
-            return tuple(int(p) for p in parts if p.isdigit()) or (0,)
-
-        available = latest and _parse(latest) > _parse(VERSION)
+        available = latest and _parse_version(latest) > _parse_version(VERSION)
 
         return jsonify({
             "current":           VERSION,
@@ -1138,14 +1484,22 @@ def api_perform_update():
         r = requests.get(GITHUB_API, timeout=10)
         r.raise_for_status()
         data  = r.json()
+        latest = data.get("tag_name", "").lstrip("v")
         dl_url = data.get("zipball_url")
         if not dl_url:
             return jsonify({"success": False, "error": "No download URL"}), 400
+        if latest and _parse_version(latest) <= _parse_version(VERSION):
+            return jsonify({"success": False, "error": "Already up to date"}), 400
 
         zip_resp = requests.get(dl_url, timeout=60, stream=True)
         zip_resp.raise_for_status()
 
+        #* The running code lives in <project>/source/, while the repo zipball
+        #* has the repo root (source/, main.py, ...). Update the project root.
+        #* Код лежит в <project>/source/, а zipball содержит корень репозитория
+        #* (source/, main.py, ...). Обновляем корень проекта.
         app_dir = os.path.dirname(os.path.abspath(__file__))
+        project_dir = os.path.dirname(app_dir) if os.path.basename(app_dir) == "source" else app_dir
 
         with tempfile.TemporaryDirectory() as tmp:
             zip_path = os.path.join(tmp, "update.zip")
@@ -1155,14 +1509,22 @@ def api_perform_update():
 
             extract_dir = os.path.join(tmp, "extracted")
             os.makedirs(extract_dir, exist_ok=True)
+            safe_root = os.path.realpath(extract_dir) + os.sep
             with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(extract_dir)
+                for member in zf.infolist():  # Guard against Zip Slip / Защита от Zip Slip
+                    dest = os.path.realpath(os.path.join(extract_dir, member.filename))
+                    if not dest.startswith(safe_root):
+                        return jsonify({"success": False, "error": "Unsafe archive path"}), 400
+                    zf.extract(member, extract_dir)
 
-            root = os.path.join(extract_dir, os.listdir(extract_dir)[0])
+            entries = os.listdir(extract_dir)
+            if len(entries) != 1:
+                return jsonify({"success": False, "error": "Unexpected archive layout"}), 400
+            root = os.path.join(extract_dir, entries[0])
 
-            for item in os.listdir(root):  # Copy every file/folder from update to app directory
+            for item in os.listdir(root):  # Copy every file/folder from update to project directory
                 src = os.path.join(root, item)
-                dst = os.path.join(app_dir, item)
+                dst = os.path.join(project_dir, item)
                 if os.path.isdir(src):
                     if os.path.exists(dst):
                         shutil.rmtree(dst)
@@ -1256,7 +1618,9 @@ def api_hand_mouse():
         return jsonify({"ok": False, "error": "pyautogui is not installed"}), 500
 
     try:
-        pyautogui.FAILSAFE = False
+        #? Keep the failsafe on: slam the cursor into a screen corner to abort
+        #? Оставляем failsafe включённым: резкий увод курсора в угол прерывает управление
+        pyautogui.FAILSAFE = True
         if action == "move":
             x, y = data.get("x"), data.get("y")
             if x is None or y is None:
@@ -1284,5 +1648,6 @@ def api_hand_mouse():
 if __name__ == "__main__":
 
     port  = int(os.environ.get("PORT", 5066))
-    debug = os.environ.get("DEBUG", "true").lower() == "true"
-    app.run(host="0.0.0.0", port=port, debug=debug)
+    host  = os.environ.get("HOST", "127.0.0.1")
+    debug = os.environ.get("DEBUG", "false").lower() == "true"
+    app.run(host=host, port=port, debug=debug)
