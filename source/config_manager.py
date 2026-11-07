@@ -8,6 +8,36 @@ import threading
 import time
 import sys
 
+try:
+    import keyring
+except Exception:
+    keyring = None
+
+
+#* Keychain service name and account names for each secret
+#* Имя сервиса keychain и имена аккаунтов для каждого секрета
+KEYRING_SERVICE = os.environ.get("AI_ASSISTANT_KEYRING_SERVICE", "AI Assistant")
+_SECRET_ACCOUNTS = {
+    "or_key": "openrouter",
+    "fish_key": "fishaudio",
+    "hf_key": "huggingface",
+}
+
+
+#* Returns the active OS keyring backend, or None when unavailable
+#* Возвращает активный backend системного keyring или None, если он недоступен
+def _keyring_backend():
+    if keyring is None:
+        return None
+    try:
+        backend = keyring.get_keyring()
+    except Exception:
+        return None
+    module = getattr(type(backend), "__module__", "")
+    if module.endswith(".fail"):
+        return None
+    return backend
+
 
 #* All working files: config, history, voices, agents
 #* Все рабочие файлы: конфиг, история, голоса, агенты
@@ -178,6 +208,78 @@ class ConfigManager:
         return CONFIG_FILE
 
 
+    #* Returns whether API keys are kept in the OS keychain
+    #* Возвращает, хранятся ли API-ключи в системном keychain
+    def get_key_storage_status(self):
+        backend = _keyring_backend()
+        if backend is None:
+            return {"available": False, "backend": "", "mode": "json"}
+        return {
+            "available": True,
+            "backend": getattr(backend, "name", type(backend).__name__),
+            "mode": "keyring",
+        }
+
+
+    def _get_secret(self, field):
+        account = _SECRET_ACCOUNTS.get(field)
+        if account and _keyring_backend() is not None:
+            try:
+                value = keyring.get_password(KEYRING_SERVICE, account)
+                if value:
+                    return value
+            except Exception:
+                pass
+        return self._data.get(field, "")
+
+
+    def _set_secret(self, field, value):
+        value = (value or "").strip()
+        if not value:
+            return
+        account = _SECRET_ACCOUNTS.get(field)
+        if account and _keyring_backend() is not None:
+            try:
+                keyring.set_password(KEYRING_SERVICE, account, value)
+                self._data.pop(field, None)
+                return
+            except Exception:
+                pass
+        self._data[field] = value
+
+
+    def _delete_secret(self, field):
+        account = _SECRET_ACCOUNTS.get(field)
+        if account and _keyring_backend() is not None:
+            try:
+                keyring.delete_password(KEYRING_SERVICE, account)
+            except Exception:
+                pass
+        self._data.pop(field, None)
+
+
+    def _migrate_secrets(self):
+        #* Moves legacy plaintext keys from config.json into the OS keychain
+        #* Переносит старые plaintext-ключи из config.json в системный keychain
+        if _keyring_backend() is None:
+            return
+        changed = False
+        for field, account in _SECRET_ACCOUNTS.items():
+            value = (self._data.get(field) or "").strip()
+            if not value:
+                continue
+            try:
+                keyring.set_password(KEYRING_SERVICE, account, value)
+            except Exception:
+                continue
+            self._data.pop(field, None)
+            changed = True
+        if changed:
+            try:
+                self._save_config()
+            except Exception:
+                pass
+
 
     def ensure_dir(self):
         #* Creates config directory + agents/ subdirectory if they don't exist
@@ -201,6 +303,8 @@ class ConfigManager:
         else:
             self._data = {}
 
+        self._migrate_secrets()
+
 
 
     def save(self, or_key="", fish_key="", hf_key=""):
@@ -209,12 +313,9 @@ class ConfigManager:
         with self._lock:
             self.ensure_dir()
             # Store non-empty keys only / Сохраняем только непустые ключи
-            if or_key:
-                self._data["or_key"] = or_key.strip()
-            if fish_key:
-                self._data["fish_key"] = fish_key.strip()
-            if hf_key:
-                self._data["hf_key"] = hf_key.strip()
+            self._set_secret("or_key", or_key)
+            self._set_secret("fish_key", fish_key)
+            self._set_secret("hf_key", hf_key)
 
             self._data["configured"] = True
             self._save_config()
@@ -231,12 +332,12 @@ class ConfigManager:
     #* Returns the OpenRouter API key
     #* Возвращает API ключ OpenRouter
     def get_or_key(self):
-        return self._data.get("or_key", "")
+        return self._get_secret("or_key")
 
     #* Returns the Fish Audio API key
     #* Возвращает API ключ Fish Audio
     def get_fish_key(self):
-        return self._data.get("fish_key", "")
+        return self._get_secret("fish_key")
 
     #* Returns the chat history limit (number of saved messages)
     #* Возвращает лимит истории чата (количество сохранённых сообщений)
@@ -254,7 +355,7 @@ class ConfigManager:
     #* Returns the HuggingFace API key
     #* Возвращает API ключ HuggingFace
     def get_hf_key(self):
-        return self._data.get("hf_key", "")
+        return self._get_secret("hf_key")
 
 
     #* Returns the current system prompt (falls back to default)
@@ -494,6 +595,8 @@ class ConfigManager:
     #! ВНИМАНИЕ: Удаляет файл конфигурации и сбрасывает все настройки
     def reset(self):
         with self._lock:
+            for field in _SECRET_ACCOUNTS:
+                self._delete_secret(field)
             if os.path.exists(CONFIG_FILE):
                 os.remove(CONFIG_FILE)
             self._data = {}

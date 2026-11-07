@@ -77,6 +77,16 @@ def search_web(query):
     return True, query
 
 
+#* Opens an image search for the given query / Открывает поиск картинок по запросу
+def search_images(query):
+    query = (query or "").strip().rstrip(".,;:!?")
+    if not query:
+        return False, ""
+    url = "https://www.google.com/search?tbm=isch&q=" + urllib.parse.quote(query)
+    webbrowser.open(url, new=2)
+    return True, query
+
+
 #* Hides/minimizes all application windows (show desktop)
 #* Сворачивает все окна приложений (показывает рабочий стол)
 def minimize_all():
@@ -109,6 +119,8 @@ def execute_command(kind, value):
         return open_website(value)
     if kind == "search":
         return search_web(value)
+    if kind == "images":
+        return search_images(value)
     if kind == "minimize_all":
         return minimize_all()
     return False, ""

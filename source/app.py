@@ -46,6 +46,7 @@ COMMANDS_DOC = (
     "- Open a website: ⟦open:<url-or-site-name>⟧  — translate site names to URLs yourself "
     "(e.g. \"ютуб\"→https://youtube.com, \"github\"→https://github.com).\n"
     "- Search the web: ⟦search:<query>⟧\n"
+    "- Search images: ⟦images:<query>⟧  — use when the user asks to find or show a photo, picture or image; keep only the essential search terms.\n"
     "- Minimize/hide all windows (show desktop): ⟦minimize_all⟧"
 )
 
@@ -64,7 +65,62 @@ def _system_prompt():
 
 #* Regex for command tokens: ⟦kind:value⟧ or ⟦kind⟧
 #* Регулярка для токенов команд: ⟦тип:значение⟧ или ⟦тип⟧
-CMD_RE = re.compile(r'⟦(open|search|minimize_all)(?::([^⟧]*))?⟧', re.DOTALL)
+CMD_RE = re.compile(r'⟦(open|search|images|minimize_all)(?::([^⟧]*))?⟧', re.DOTALL)
+
+IMAGE_WORD_RE = re.compile(
+    r'(?i)\b(фото(?:графи\w*)?|фотк\w*|картин\w*|изображен\w*|'
+    r'photo(?:graph\w*)?s?|pictures?|images?|pics?)\b'
+)
+FIND_WORD_RE = re.compile(
+    r'(?i)\b(найд\w*|найти|покаж\w*|поищ\w*|подбер\w*|скин\w*|кин\w*|'
+    r'пришл\w*|дай|хочу|хотел\w*|find|show|search|get|look for|send|give)\b'
+)
+WEB_INTENT_RE = re.compile(
+    r'(?i)(погугл\w*|загугл\w*|поищ\w*\s+в\s+интернете|найд\w*\s+в\s+интернете|'
+    r'поиск\w*\s+в\s+интернете|search\s+(the\s+)?web|search\s+online|look\s+up|'
+    r'latest|current|today|новост\w*|последн\w*|сегодня|курс\w*|погод\w*|'
+    r'what\s+is\s+happening|breaking)'
+)
+
+
+def _wants_images(message):
+    return bool(IMAGE_WORD_RE.search(message or "") and FIND_WORD_RE.search(message or ""))
+
+
+def _image_query(message):
+    query = (message or "").strip()
+    query = re.sub(r'(?i)^(пожалуйста[,\s]*|please[,\s]*)', '', query)
+    query = re.sub(
+        r'(?i)\b(найди|найти|покажи|показать|поищи|подбери|скинь|кинь|пришли|'
+        r'дай|хочу|хотел\w*|мне|пожалуйста|find|show|search\s+for|look\s+for|'
+        r'get|me|send|give)\b',
+        ' ', query,
+    )
+    query = re.sub(
+        r'(?i)\b(a|an|the)\s+(photo|picture|image|pic)\s+of\b',
+        ' ', query,
+    )
+    query = re.sub(
+        r'(?i)\b(photo|picture|image|pic)\s+of\b',
+        ' ', query,
+    )
+    query = re.sub(
+        r'(?i)\b(фотографию|фотография|фотографии|фотографий|фото|фотку|фотка|'
+        r'картинку|картинка|картинки|изображение|изображения|'
+        r'photos?|pictures?|images?|pics?)\b',
+        ' ', query,
+    )
+    query = re.sub(
+        r'(?i)\b(в\s+интернете|в\s+браузере|онлайн|on\s+the\s+web|online|'
+        r'in\s+the\s+internet)\b',
+        ' ', query,
+    )
+    query = re.sub(r'\s+', ' ', query).strip(' .,;:!?-')
+    return query or (message or "").strip()
+
+
+def _wants_web_search(message):
+    return bool(WEB_INTENT_RE.search(message or ""))
 
 
 def _cmd_msg(kind, ok, detail):
@@ -74,32 +130,39 @@ def _cmd_msg(kind, ok, detail):
         return t("cmd_open") + ": " + detail if ok else t("cmd_open_fail") + ": " + detail
     if kind == "search":
         return t("cmd_search") + ' "' + detail + '".' if ok else t("cmd_search_fail")
+    if kind == "images":
+        return t("cmd_images") + ' "' + detail + '".' if ok else t("cmd_images_fail")
     if kind == "minimize_all":
         return t("cmd_minimize") if ok else t("cmd_minimize_fail")
     return ""
 
 
-def _execute_commands(text):
+def _execute_commands(text, prefer_images=False, return_meta=False):
     #* Finds command tokens in the AI reply, executes each action and replaces
     #* the token with a short confirmation. Returns the new reply text.
     #* Находит токены команд в ответе ИИ, выполняет действие и заменяет токен
     #* коротким подтверждением. Возвращает новый текст ответа.
+    executed = []
     if not text or not CMD_RE.search(text):
-        return text
+        return (text, executed) if return_meta else text
     def repl(m):
         kind   = m.group(1)
         value  = (m.group(2) or "").strip()
+        if kind == "search" and prefer_images:
+            kind = "images"
         try:
             ok, detail = execute_command(kind, value)
         except Exception as ex:
             ok, detail = False, str(ex)[:80]
+        executed.append(kind)
         return " " + _cmd_msg(kind, ok, detail) + " "
     text = CMD_RE.sub(repl, text)
     #? Collapse horizontal whitespace only, keep paragraph breaks intact
     #? Схлопываем только горизонтальные пробелы, сохраняя переносы строк
     text = re.sub(r'[ \t]+', ' ', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
+    text = text.strip()
+    return (text, executed) if return_meta else text
 
 #* Extract text from attached files (PDF, DOCX, TXT) / Извлекает текст из прикреплённых файлов
 #* Возвращает список строк вида "Attached file 'name':\n```\ntext\n```"
@@ -172,9 +235,45 @@ def _clean_reply(text):
     return text.strip()
 
 
+def _extract_citations(message_data):
+    #* Pulls unique HTTP(S) citations from an OpenRouter message
+    #* Извлекает уникальные HTTP(S)-цитаты из сообщения OpenRouter
+    sources = []
+    seen = set()
+    for ann in (message_data.get("annotations") or []):
+        if ann.get("type") != "url_citation":
+            continue
+        citation = ann.get("url_citation") or {}
+        url = (citation.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            continue
+        title = (citation.get("title") or parsed.netloc or url).strip()
+        title = title.replace("[", "(").replace("]", ")")
+        seen.add(url)
+        sources.append((title, url))
+    return sources
+
+
+def _append_sources(content, message_data):
+    #* Appends a compact, clickable source list to a grounded answer
+    #* Добавляет компактный список ссылок к ответу с web-поиском
+    sources = _extract_citations(message_data)
+    if not sources:
+        return content
+    lang = config.get_lang()
+    label = T.get(lang, T["en"]).get("web_sources", "Sources")
+    lines = [f"\n\n**{label}:**"]
+    for title, url in sources[:6]:
+        lines.append(f"- [{title}]({url})")
+    return content.rstrip() + "\n".join(lines)
+
+
 #! Calls OpenRouter API — requires valid API key
 #! Вызов OpenRouter API — требуется валидный API ключ
-def _call_openrouter(model_id, message, history=None):
+def _call_openrouter(model_id, message, history=None, use_web=False):
     limit = config.get_history_limit()
     sp = _system_prompt()
     messages = [{"role": "system", "content": sp}]
@@ -196,8 +295,9 @@ def _call_openrouter(model_id, message, history=None):
             "model": model_id,
             "messages": messages,
             "max_tokens": 4096,
+            **({"plugins": [{"id": "web", "max_results": 5}]} if use_web else {}),
         }),
-        timeout=45,
+        timeout=60 if use_web else 45,
     )
     if r.status_code != 200:
         err = "AI error"
@@ -214,6 +314,8 @@ def _call_openrouter(model_id, message, history=None):
 
     msg_data = raw["choices"][0].get("message", {})
     content  = msg_data.get("content") or msg_data.get("reasoning") or ""
+    if use_web:
+        content = _append_sources(content, msg_data)
 
     return content
 
@@ -525,6 +627,7 @@ def api_get_config():
         "history_limit": config.get_history_limit(),
         "system_prompt": config.get_system_prompt(),
         "check_updates": config.get_check_updates(),
+        "key_storage": config.get_key_storage_status(),
     }
     return jsonify(keys)
 
@@ -588,6 +691,8 @@ def api_chat():
     model_id = data.get("model", "")
     voice_id = data.get("voice", "")
     muted    = data.get("muted", False)
+    use_web  = bool(data.get("web_search")) or _wants_web_search(msg)
+    wants_images = _wants_images(msg)
 
     if not config.is_configured():
         return jsonify({"reply": "Please configure API keys first."})
@@ -625,7 +730,9 @@ def api_chat():
         for m in fallback_chain:  # Try each model in fallback order until one succeeds
             try:
                 if m["provider"] == "openrouter":
-                    reply = _call_openrouter(m["id"], msg, chat_history)
+                    reply = _call_openrouter(m["id"], msg, chat_history, use_web=use_web)
+                elif use_web:
+                    continue
                 else:
                     result = _call_huggingface(m["id"], msg, chat_history)
                     if result.startswith("Model is loading"):  # HF cold-start — skip to next model
@@ -677,7 +784,11 @@ def api_chat():
 
         #* Execute any desktop-command tokens the AI emitted (open site, search, ...)
         #* Выполняем токены команд ПК, которые выдал ИИ (открыть сайт, поиск, ...)
-        reply = _execute_commands(reply)
+        reply, executed = _execute_commands(reply, prefer_images=wants_images, return_meta=True)
+        if wants_images and not any(k in ("images", "search", "open") for k in executed):
+            ok, detail = execute_command("images", _image_query(msg))
+            notice = _cmd_msg("images", ok, detail)
+            reply = (reply + "\n\n" + notice).strip() if reply else notice
 
         #* Save AI response to history
         #* Сохраняем ответ ИИ в историю
@@ -709,10 +820,13 @@ def api_chat():
 def api_chat_stream():
     data     = request.json
     msg      = data.get("message", "")
+    orig_msg = msg
     files    = data.get("files", [])
     model_id = data.get("model", "")
     voice_id = data.get("voice", "")
     muted    = data.get("muted", False)
+    use_web  = bool(data.get("web_search")) or _wants_web_search(orig_msg)
+    wants_images = _wants_images(orig_msg)
 
     if files:
         file_parts = extract_files_text(files)
@@ -750,8 +864,23 @@ def api_chat_stream():
                     break
 
                 if m["provider"] == "openrouter":
+                    tokens_yielded = False
                     try:
-                        tokens_yielded = False
+                        if use_web:
+                            reply = ""
+                            reply = _call_openrouter(m["id"], msg, chat_history, use_web=True)
+                            if not reply:
+                                raise Exception("Empty web search response")
+                            if m["id"] != model_id:
+                                used_model_id = m["id"]
+                                for nm in all_models:
+                                    if nm["id"] == used_model_id:
+                                        model_switch_tag = nm["name"]
+                                        break
+                                yield f"data: {json.dumps({'type': 'model_switch', 'content': model_switch_tag})}\n\n"
+                            yield f"data: {json.dumps({'type': 'token', 'content': reply})}\n\n"
+                            succeeded = True
+                            continue
                         for token in _call_openrouter_stream(m["id"], msg, chat_history):  # Stream tokens from OpenRouter
                             if not tokens_yielded:
                                 tokens_yielded = True
@@ -774,6 +903,8 @@ def api_chat_stream():
                             yield f"data: {json.dumps({'type': 'replace', 'content': ''})}\n\n"
                         continue
                 else:
+                    if use_web:
+                        continue
                     #? HuggingFace fallback (non-streaming)
                     #? Фолбек на HuggingFace (без стриминга)
                     try:
@@ -804,9 +935,13 @@ def api_chat_stream():
 
             #* Execute any desktop-command tokens the AI emitted (open site, search, ...)
             #* Выполняем токены команд ПК, которые выдал ИИ (открыть сайт, поиск, ...)
-            reply_executed = _execute_commands(reply)
-            if reply_executed != reply:
-                reply = reply_executed
+            before_cmd = reply
+            reply, executed = _execute_commands(reply, prefer_images=wants_images, return_meta=True)
+            if wants_images and not any(k in ("images", "search", "open") for k in executed):
+                ok, detail = execute_command("images", _image_query(orig_msg))
+                notice = _cmd_msg("images", ok, detail)
+                reply = (reply + "\n\n" + notice).strip() if reply else notice
+            if reply != before_cmd:
                 yield f"data: {json.dumps({'type': 'replace', 'content': reply})}\n\n"
 
             config.add_to_history("assistant", reply)

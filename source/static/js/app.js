@@ -38,6 +38,7 @@ const statusDot       = document.getElementById("status-indicator");
 const muteToggle      = document.getElementById("mute-toggle");
 const muteIconOn      = document.getElementById("mute-icon-on");
 const muteIconOff     = document.getElementById("mute-icon-off");
+const webToggle       = document.getElementById("web-toggle");
 
 const t = TRANSLATIONS || {};
 //* Locale for dates — always follow the UI language, not the OS locale
@@ -46,6 +47,7 @@ const LOCALE_BY_LANG = { en: "en-US", ru: "ru-RU", de: "de-DE", fr: "fr-FR", pt:
 const UI_LOCALE = LOCALE_BY_LANG[CURRENT_LANG] || "en-US";
 let isLoading = false;
 let isMuted = false;
+let webSearchEnabled = false;
 
 
 
@@ -73,6 +75,16 @@ messageInput.addEventListener("keydown", (e) => {
 
 // Click send button
 sendBtn.addEventListener("click", sendMessage);
+
+//* Toggle OpenRouter web grounding for the next messages
+//* Переключает web-поиск OpenRouter для следующих сообщений
+if (webToggle) {
+    webToggle.addEventListener("click", () => {
+        webSearchEnabled = !webSearchEnabled;
+        webToggle.classList.toggle("active", webSearchEnabled);
+        webToggle.setAttribute("aria-pressed", String(webSearchEnabled));
+    });
+}
 
 
 //* Clear chat messages (UI only)
@@ -256,6 +268,7 @@ async function sendMessage() {
                 model: modelSelect.value,
                 voice: voiceSelect.value,
                 muted: isMuted,
+                web_search: webSearchEnabled,
             }),
         });
 
@@ -629,6 +642,7 @@ const fishKeyInput     = document.getElementById("fish-key-input");
 const hfKeyInput       = document.getElementById("hf-key-input");
 const saveKeysBtn      = document.getElementById("save-keys-btn");
 const keysSaveMsg      = document.getElementById("keys-save-msg");
+const keyStorageNote   = document.getElementById("key-storage-note");
 const historyLimitInput = document.getElementById("history-limit-input");
 const systemPromptInput = document.getElementById("system-prompt-input");
 const saveSystemPromptBtn = document.getElementById("save-system-prompt-btn");
@@ -647,6 +661,13 @@ async function loadKeys() {
         hfKeyInput.value         = data.hf_key || "";
         historyLimitInput.value  = data.history_limit || 10;
         systemPromptInput.value  = data.system_prompt || "";
+        if (keyStorageNote) {
+            const secured = data.key_storage && data.key_storage.available;
+            keyStorageNote.textContent = secured
+                ? (t.key_storage_secured || "API keys are stored in the system keychain.")
+                : (t.key_storage_fallback || "System keychain unavailable — keys are stored locally.");
+            keyStorageNote.classList.toggle("warning", !secured);
+        }
     } catch {}
 }
 
