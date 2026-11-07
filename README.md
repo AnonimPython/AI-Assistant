@@ -112,20 +112,6 @@ On first launch after upgrading, existing plaintext keys are migrated from `~/AI
 - **Markdown rendering** — AI responses rendered with full markdown support
 - **Auto-setup** — OpenRouter OAuth or manual key entry
 
-## How to add a custom voice
-
-Add any voice from Fish Audio to your assistant. The screenshots below walk through the full process.
-
-| Step | Screenshot |
-|------|------------|
-| 1 — Find a voice on fish.audio | ![](source/static/how_to_add_voice/step_1.png) |
-| 2 — Click the voice card | ![](source/static/how_to_add_voice/step_2.png) |
-| 3 — Copy the voice URL | ![](source/static/how_to_add_voice/step_3.jpg) |
-| 4 — Open Add voice in app | ![](source/static/how_to_add_voice/step_4.png) |
-| 5 — Paste link and save | ![](source/static/how_to_add_voice/step_5.png) |
-
-**Alternative:** Open the app, go to Settings → Add voice, and click “How to add a voice” for an in-app guide with the same screenshots.
-
 ---
 
 ## Build exe/dmg
